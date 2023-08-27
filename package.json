@@ -1,0 +1,59 @@
+{
+  "name": "conqueue",
+  "version": "0.0.1",
+  "description": "Multifunctional Concurrent Queue",
+  "main": "queue.js",
+  "types": "queue.d.ts",
+  "engines": {
+    "node": "16 || 18 || 20 || 21"
+  },
+  "readmeFilename": "README.md",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/timursevimli/conqueue.git"
+  },
+  "keywords": [
+    "queue",
+    "concurrency",
+    "concurrent",
+    "asynchronous",
+    "synchronous",
+    "callback",
+    "promise",
+    "lifo",
+    "fifo",
+    "priority",
+    "roundrobin",
+    "timeout",
+    "debounce",
+    "factor",
+    "pause",
+    "resume",
+    "pipe",
+    "async",
+    "job",
+    "task"
+  ],
+  "author": "Timur Sevimli <svmlitimur@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/timursevimli/conqueue/issues",
+    "email": "svmlitimur+github@gmail.com"
+  },
+  "homepage": "https://github.com/timursevimli/conqueue#readme",
+  "scripts": {
+    "test": "npm run lint && npm run types && node test/unit.js",
+    "types": "tsc -p tsconfig.json",
+    "lint": "eslint . && prettier --check \"**/*.js\" \"**/*.json\" \"**/*.md\" \"**/.*rc\" \"**/*.ts\"",
+    "fmt": "prettier --write \"**/*.js\" \"**/*.json\" \"**/*.md\" \"**/.*rc\" \"**/*.ts\""
+  },
+  "devDependencies": {
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-prettier": "^5.1.2",
+    "prettier": "^3.1.1",
+    "tap": "^16.1.0",
+    "typescript": "^5.3.3"
+  }
+}
