@@ -2,9 +2,10 @@
   "name": "conqueue",
   "version": "0.0.1",
   "description": "Multifunctional Concurrent Queue",
-  "main": "index.js",
+  "main": "queue.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "lint": "eslint . && prettier -c '**/*.js' '**/*.json' '**/*.md'",
+    "fmt": "prettier --write '**/*.js' '**/*.json' '**/*.md'"
   },
   "repository": {
     "type": "git",
@@ -30,5 +31,9 @@
   "bugs": {
     "url": "https://github.com/timursevimli/conqueue/issues"
   },
-  "homepage": "https://github.com/timursevimli/conqueue#readme"
+  "homepage": "https://github.com/timursevimli/conqueue#readme",
+  "devDependencies": {
+    "eslint": "^8.48.0",
+    "prettier": "^3.0.3"
+  }
 }
