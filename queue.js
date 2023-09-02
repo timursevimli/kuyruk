@@ -68,10 +68,8 @@ class Queue {
     if (!this.promiseMode) {
       this.onProcess(item, execute);
     } else {
-      this.onProcess(item).then(
-        (res) => void execute(null, res),
-        (err) => void execute(err),
-      );
+      const exec = [(res) => execute(null, res), execute];
+      this.onProcess(item).then(...exec);
     }
   }
 
