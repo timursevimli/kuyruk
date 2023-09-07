@@ -109,15 +109,13 @@ class Queue {
     if (this.destination) this.destination.add(res);
     if (onDrain) {
       if (!this.roundRobinMode) {
-        if (this.count === 0 && this.waiting.length === 0) {
-          onDrain();
-        }
-      } else {
-        const queuesIsDrain = this.waiting.every(
-          (queue) => !!(queue.waiting.length === 0 && queue.count === 0),
-        );
-        if (queuesIsDrain) onDrain();
+        if (this.count === 0 && this.waiting.length === 0) onDrain();
+        return;
       }
+      const queuesIsDrain = this.waiting.every(
+        (queue) => !!(queue.waiting.length === 0 && queue.count === 0),
+      );
+      if (queuesIsDrain) onDrain();
     }
   }
 
