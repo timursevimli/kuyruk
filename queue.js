@@ -65,12 +65,9 @@ class Queue {
         execute(err, result);
       }, this.processTimeout);
     }
-    if (!this.promiseMode) {
-      this.onProcess(item, execute);
-    } else {
-      const exec = [(res) => execute(null, res), execute];
-      this.onProcess(item).then(...exec);
-    }
+    if (!this.promiseMode) return void this.onProcess(item, execute);
+    const toExec = [(res) => execute(null, res), execute];
+    this.onProcess(item).then(...toExec);
   }
 
   _takeNext() {
