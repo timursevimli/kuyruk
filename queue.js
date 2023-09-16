@@ -1,5 +1,7 @@
 'use strict';
 
+const { debounce } = require('./utils');
+
 class Queue {
   constructor(concurrency) {
     this.concurrency = concurrency;
@@ -48,11 +50,7 @@ class Queue {
       this._finish(err, result);
     };
     if (this.debounceMode && this.debounceCount-- > 0) {
-      // prettier-ignore
-      const debounce = (fn) => (...args) => {
-        setTimeout(() => void fn(...args), this.debounceInterval);
-      };
-      execute = debounce(execute);
+      execute = debounce(execute, this.debounceInterval);
     }
     if (this.processTimeout !== Infinity) {
       const err = new Error('Process timed out!');
@@ -65,9 +63,11 @@ class Queue {
         execute(err, result);
       }, this.processTimeout);
     }
-    if (!this.promiseMode) return void this.onProcess(item, execute);
-    const toExec = [(res) => execute(null, res), execute];
-    this.onProcess(item).then(...toExec);
+    if (!this.promiseMode) {
+      this.onProcess(item, execute);
+    } else {
+      this.onProcess(item).then((res) => execute(null, res), execute);
+    }
   }
 
   _takeNext() {
@@ -104,11 +104,10 @@ class Queue {
     }
     if (onDone) onDone(err, res);
     if (this.destination) this.destination.add(res);
-    if (onDrain) {
-      if (!this.roundRobinMode) {
-        if (this.count === 0 && this.waiting.length === 0) onDrain();
-        return;
-      }
+    if (!onDrain) return;
+    if (!this.roundRobinMode) {
+      if (this.count === 0 && this.waiting.length === 0) onDrain();
+    } else {
       const queuesIsDrain = this.waiting.every(
         (queue) => !!(queue.waiting.length === 0 && queue.count === 0),
       );
@@ -124,30 +123,27 @@ class Queue {
 
     if (this.roundRobinMode) {
       let queue = this.waiting.find((q) => q.factor === factor);
-      if (queue) {
-        queue.add(item);
-      } else {
-        queue = Queue.channels(this.concurrency)
-          .pause()
-          .process(this.onProcess)
-          .setFactor(factor)
-          .add(item);
+      if (queue) return void queue.add(item);
+      queue = Queue.channels(this.concurrency)
+        .pause()
+        .process(this.onProcess)
+        .setFactor(factor)
+        .add(item);
 
-        if (this.promiseMode) queue.promise();
-        if (this.priorityMode) queue.priority();
-        if (!this.fifoMode) queue.lifo();
-        if (this.waitTimeout !== Infinity) queue.wait(this.waitTimeout);
-        if (this.processTimeout !== Infinity) {
-          queue.timeout(this.processTimeout, this.onTimeout);
-        }
-        if (this.debounceMode) {
-          queue.debounce(this.debounceCount, this.debounceInterval);
-        }
-
-        queue._finish = this._finish.bind(this);
-        this.waiting.push(queue);
-        queue.resume();
+      if (this.promiseMode) queue.promise();
+      if (this.priorityMode) queue.priority();
+      if (!this.fifoMode) queue.lifo();
+      if (this.waitTimeout !== Infinity) queue.wait(this.waitTimeout);
+      if (this.processTimeout !== Infinity) {
+        queue.timeout(this.processTimeout, this.onTimeout);
       }
+      if (this.debounceMode) {
+        queue.debounce(this.debounceCount, this.debounceInterval);
+      }
+
+      queue._finish = this._finish.bind(this);
+      this.waiting.push(queue);
+      queue.resume();
       return;
     }
 
