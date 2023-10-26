@@ -1,6 +1,6 @@
 {
   "name": "conqueue",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "Multifunctional Concurrent Queue",
   "main": "queue.js",
   "scripts": {
