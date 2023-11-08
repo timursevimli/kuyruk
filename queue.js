@@ -3,8 +3,9 @@
 const { debounce } = require('./utils');
 
 class Queue {
-  constructor(concurrency) {
+  constructor(concurrency, size = Infinity) {
     this.concurrency = concurrency;
+    this.size = size;
     this.count = 0;
     this.waiting = [];
     this.destination = null;
@@ -116,6 +117,7 @@ class Queue {
   }
 
   add(item, factor = 0, priority = 0) {
+    if (this.size < this.waiting.length) return;
     if (this.priorityMode && !this.roundRobinMode) {
       priority = factor;
       factor = 0;
