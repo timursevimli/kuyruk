@@ -36,7 +36,7 @@ class Queue {
     let timer = null;
     let finished = false;
     this.count++;
-    let execute = (err, res) => {
+    let execute = (err = null, res = item) => {
       if (finished) return;
       finished = true;
       if (timer) {
