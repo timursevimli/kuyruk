@@ -60,8 +60,7 @@ class Queue {
         if (this.onTimeout) {
           this.onTimeout(err);
         }
-        const result = { res: item, from: this.factor };
-        execute(err, result);
+        execute(err);
       }, this.processTimeout);
     }
     if (!this.promiseMode) {
