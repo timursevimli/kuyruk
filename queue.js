@@ -32,8 +32,8 @@ class Queue {
     this.onDrain = null;
   }
 
-  static channels(concurrency) {
-    return new Queue(concurrency);
+  static channels(concurrency, size) {
+    return new Queue(concurrency, size);
   }
 
   #next(item) {
@@ -282,6 +282,4 @@ class Queue {
   }
 }
 
-const queue = (channels) => new Queue(channels);
-
-module.exports = { queue, Queue };
+module.exports = Queue;
