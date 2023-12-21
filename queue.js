@@ -94,12 +94,8 @@ class Queue {
   _finish(err, res) {
     const { onFailure, onSuccess, onDone, onDrain } = this;
     if (err) {
-      if (onFailure) {
-        onFailure(err, res);
-      }
-    } else if (onSuccess) {
-      onSuccess(res);
-    }
+      if (onFailure) onFailure(err, res);
+    } else if (onSuccess) onSuccess(res);
     if (onDone) onDone(err, res);
     if (this.destination) this.destination.add(res);
     if (!onDrain) return;
