@@ -64,7 +64,7 @@ class Queue {
     if (!this.promiseMode) {
       this.onProcess(item, execute);
     } else {
-      this.onProcess(item).then((res) => execute(null, res), execute);
+      this.onProcess(item).then((res) => void execute(null, res), execute);
     }
   }
 
