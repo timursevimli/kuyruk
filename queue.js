@@ -3,6 +3,10 @@
 const { debounce } = require('./utils');
 
 class Queue {
+  next;
+  finish;
+  takeNext;
+
   constructor(concurrency, size = Infinity) {
     this.concurrency = concurrency;
     this.size = size;
@@ -32,11 +36,11 @@ class Queue {
     return new Queue(concurrency);
   }
 
-  _next(item) {
+  #next(item) {
     let timer = null;
     let finished = false;
     this.count++;
-    let execute = (err = null, res = item) => {
+    let execute = (err = null, res) => {
       if (finished) return;
       finished = true;
       if (timer) {
@@ -45,10 +49,9 @@ class Queue {
       }
       this.count--;
       setTimeout(() => {
-        if (this.waiting.length > 0) this._takeNext();
+        if (this.waiting.length > 0) this.#takeNext();
       }, 0);
-      const result = { res, from: this.factor };
-      this._finish(err, result);
+      this.#finish(err, { res, from: this.factor });
     };
     if (this.debounceMode && this.debounceCount-- > 0) {
       execute = debounce(execute, this.debounceInterval);
@@ -68,7 +71,7 @@ class Queue {
     }
   }
 
-  _takeNext() {
+  #takeNext() {
     if (this.paused) return;
     const { waiting, waitTimeout } = this;
     const task = waiting.shift();
@@ -76,11 +79,11 @@ class Queue {
       const delay = Date.now() - task.start;
       if (delay > waitTimeout) {
         const err = new Error('Waiting timed out');
-        this._finish(err, task.item);
+        this.#finish(err, task.item);
         if (waiting.length > 0) {
           setTimeout(() => {
             if (!this.paused && waiting.length > 0) {
-              this._takeNext();
+              this.#takeNext();
             }
           }, 0);
         }
@@ -88,10 +91,10 @@ class Queue {
       }
     }
     const hasChannel = this.count < this.concurrency;
-    if (hasChannel) this._next(task.item);
+    if (hasChannel) this.#next(task.item);
   }
 
-  _finish(err, res) {
+  #finish(err, res) {
     const { onFailure, onSuccess, onDone, onDrain } = this;
     if (err) {
       if (onFailure) onFailure(err, res);
@@ -109,7 +112,7 @@ class Queue {
     }
   }
 
-  add(item, factor = 0, priority = 0) {
+  add(item, { factor = 0, priority = 0 } = {}) {
     if (this.size < this.waiting.length) return;
     if (this.priorityMode && !this.roundRobinMode) {
       priority = factor;
@@ -136,14 +139,14 @@ class Queue {
         queue.debounce(this.debounceCount, this.debounceInterval);
       }
 
-      queue._finish = this._finish.bind(this);
+      queue._finish = this.#finish.bind(this);
       this.waiting.push(queue);
       queue.resume();
       return;
     }
 
     if (!this.paused && this.concurrency > this.count) {
-      return void this._next(item);
+      return void this.#next(item);
     }
 
     const task = { item, priority, start: Date.now() };
@@ -201,7 +204,7 @@ class Queue {
     const emptyChannels = this.concurrency - this.count;
     let launchCount = Math.min(emptyChannels, this.waiting.length);
     while (launchCount-- > 0) {
-      this._takeNext();
+      this.#takeNext();
     }
     return this;
   }
