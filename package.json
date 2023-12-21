@@ -1,12 +1,18 @@
 {
   "name": "conqueue",
   "version": "1.0.1",
-  "description": "Multifunctional Concurrent Queue",
+  "description": "Multifunctional asynchronous concurrent queue",
   "main": "queue.js",
+  "types": "queue.d.ts",
   "scripts": {
     "lint": "eslint . && prettier -c '**/*.js' '**/*.json' '**/*.md'",
-    "fmt": "prettier --write '**/*.js' '**/*.json' '**/*.md'"
+    "fmt": "prettier --write '**/*.js' '**/*.json' '**/*.md'",
+    "types": "tsc -p tsconfig.json"
   },
+  "engines": {
+    "node": "18 || 20 || 21"
+  },
+  "readmeFilename": "README.md",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/timursevimli/conqueue.git"
@@ -14,22 +20,30 @@
   "keywords": [
     "queue",
     "concurrency",
-    "concurrent-queue",
+    "concurrent",
+    "asynchronous",
+    "synchronous",
     "callback",
     "promise",
     "lifo",
     "fifo",
     "priority",
     "roundrobin",
+    "timeout",
+    "debounce",
     "factor",
     "pause",
     "resume",
-    "pipe"
+    "pipe",
+    "async",
+    "job",
+    "task"
   ],
   "author": "Timur Sevimli <svmlitimur+github@gmail.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/timursevimli/conqueue/issues"
+    "url": "https://github.com/timursevimli/conqueue/issues",
+    "email": "svmlitimur+github@gmail.com"
   },
   "homepage": "https://github.com/timursevimli/conqueue#readme",
   "devDependencies": {
