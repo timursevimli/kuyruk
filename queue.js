@@ -113,7 +113,7 @@ class Queue {
   }
 
   add(item, { factor = 0, priority = 0 } = {}) {
-    if (this.size < this.waiting.length) return;
+    if (this.size <= this.waiting.length) return;
     if (this.priorityMode && !this.roundRobinMode) {
       priority = factor;
       factor = 0;
