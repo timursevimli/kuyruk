@@ -1,6 +1,6 @@
 'use strict';
 
-const { debounce } = require('./utils');
+const { debounce } = require('./utils.js');
 
 class Queue {
   next;
@@ -106,7 +106,7 @@ class Queue {
       if (this.count === 0 && this.waiting.length === 0) onDrain();
     } else {
       const queuesIsDrain = this.waiting.every(
-        (queue) => (queue.waiting.length === 0 && queue.count === 0),
+        (queue) => queue.waiting.length === 0 && queue.count === 0,
       );
       if (queuesIsDrain) onDrain();
     }
