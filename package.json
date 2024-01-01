@@ -4,11 +4,6 @@
   "description": "Multifunctional asynchronous concurrent queue",
   "main": "queue.js",
   "types": "queue.d.ts",
-  "scripts": {
-    "lint": "eslint . && prettier -c '**/*.js' '**/*.json' '**/*.md'",
-    "fmt": "prettier --write '**/*.js' '**/*.json' '**/*.md'",
-    "types": "tsc -p tsconfig.json"
-  },
   "engines": {
     "node": "18 || 20 || 21"
   },
@@ -46,8 +41,14 @@
     "email": "svmlitimur+github@gmail.com"
   },
   "homepage": "https://github.com/timursevimli/conqueue#readme",
+  "scripts": {
+    "test": "npm run lint && npm run types && node test/unit.js",
+    "types": "tsc -p tsconfig.json",
+    "lint": "eslint . && prettier --check \"**/*.js\" \"**/*.json\" \"**/*.md\" \"**/.*rc\" \"**/*.ts\"",
+    "fmt": "prettier --write \"**/*.js\" \"**/*.json\" \"**/*.md\" \"**/.*rc\" \"**/*.ts\""
+  },
   "devDependencies": {
-    "eslint": "^8.48.0",
-    "prettier": "^3.0.3"
+    "eslint": "^8.56.0",
+    "prettier": "^3.1.1"
   }
 }
