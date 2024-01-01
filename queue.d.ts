@@ -8,7 +8,9 @@ interface QueueResult {
   from?: number;
 }
 
-type ProcessFunction = (arguments: unknown | unknown[]) => unknown | Promise<unknown>;
+type ProcessFunction = (
+  arguments: unknown | unknown[],
+) => unknown | Promise<unknown>;
 type TimeoutCallback = (err: Error) => void;
 type DoneCallback = (err?: Error, res?: QueueResult) => void;
 type SuccessCallback = (res: QueueResult) => void;
@@ -59,5 +61,5 @@ export class Queue {
   pause(): Queue;
   clear(): Queue;
   promise(): Queue;
-  callback(): Queue; 
+  callback(): Queue;
 }
