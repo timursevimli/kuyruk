@@ -1,11 +1,10 @@
 {
-    "singleQuote": true,
-    "tabWidth": 2,
-    "trailingComma": "all",
-    "overrides": [
-        {
-            "files": ["**/.*rc", "**/*.json"],
-            "options": { "parser": "json" }
-        }
-    ]
+  "singleQuote": true,
+  "trailingComma": "all",
+  "overrides": [
+    {
+      "files": ["**/.*rc", "**/*.json"],
+      "options": { "parser": "json" }
+    }
+  ]
 }
