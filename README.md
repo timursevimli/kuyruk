@@ -1,3 +1,5 @@
+# Conqueue
+
 <div align="center">
 
 [![ci Status](https://github.com/timursevimli/conqueue/workflows/Testing%20CI/badge.svg)](https://github.com/timursevimli/conqueue/actions?query=workflow%3A%22Testing+CI%22+branch%3Amaster)
@@ -7,8 +9,6 @@
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/timursevimli/conqueue/blob/master/LICENSE)
 
 </div>
-
-# Conqueue
 
 ## Description
 
