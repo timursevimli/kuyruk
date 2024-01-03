@@ -4,7 +4,6 @@ const { debounce } = require('./utils.js');
 
 class Queue {
   next;
-  finish;
   takeNext;
 
   constructor(concurrency, size = Infinity) {
@@ -51,7 +50,7 @@ class Queue {
       setTimeout(() => {
         if (this.waiting.length > 0) this.#takeNext();
       }, 0);
-      this.#finish(err, { res, from: this.factor });
+      this.finish(err, { res, from: this.factor });
     };
     if (this.debounceMode && this.debounceCount-- > 0) {
       execute = debounce(execute, this.debounceInterval);
@@ -79,7 +78,7 @@ class Queue {
       const delay = Date.now() - task.start;
       if (delay > waitTimeout) {
         const err = new Error('Waiting timed out');
-        this.#finish(err, task.item);
+        this.finish(err, task.item);
         if (waiting.length > 0) {
           setTimeout(() => {
             if (!this.paused && waiting.length > 0) {
@@ -94,7 +93,7 @@ class Queue {
     if (hasChannel) this.#next(task.item);
   }
 
-  #finish(err, res) {
+  finish(err, res) {
     const { onFailure, onSuccess, onDone, onDrain } = this;
     if (err) {
       if (onFailure) onFailure(err, res);
@@ -139,10 +138,9 @@ class Queue {
         queue.debounce(this.debounceCount, this.debounceInterval);
       }
 
-      queue._finish = this.#finish.bind(this);
+      queue.finish = this.finish.bind(this);
       this.waiting.push(queue);
-      queue.resume();
-      return;
+      return void queue.resume();
     }
 
     if (!this.paused && this.concurrency > this.count) {
