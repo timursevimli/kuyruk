@@ -153,8 +153,8 @@ class Queue {
     else this.waiting.unshift(task);
 
     if (this.priorityMode) {
-      if (this.fifoMode) this.waiting.sort((a, b) => b.priority - a.priority);
-      else this.waiting.sort((a, b) => a.priority - b.priority);
+      const compare = this.fifoMode ? (a, b) => b - a : (a, b) => a - b;
+      this.waiting.sort(({ priority: a }, { priority: b }) => compare(a, b));
     }
   }
 
