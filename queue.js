@@ -3,9 +3,6 @@
 const { debounce } = require('./utils.js');
 
 class Queue {
-  next;
-  takeNext;
-
   constructor(concurrency, size = Infinity) {
     this.concurrency = concurrency;
     this.size = size;
