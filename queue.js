@@ -16,7 +16,7 @@ class Queue {
     this.debounceInterval = 1000;
     this.debounceCount = 0;
     this.fifoMode = true;
-    this.promiseMode = false;
+    this.asyncProcess = false;
     this.roundRobinMode = false;
     this.priorityMode = false;
     this.debounceMode = false;
@@ -60,7 +60,13 @@ class Queue {
         execute(err);
       }, this.processTimeout);
     }
-    if (!this.promiseMode) {
+    if (typeof item === 'function') {
+      return void item().then((res) => void execute(null, res), execute);
+    }
+    if (!this.onProcess) {
+      throw new Error('Process is not defined');
+    }
+    if (!this.asyncProcess) {
       this.onProcess(item, execute);
     } else {
       this.onProcess(item).then((res) => void execute(null, res), execute);
@@ -124,7 +130,7 @@ class Queue {
         .setFactor(factor)
         .add(item);
 
-      if (this.promiseMode) queue.promise();
+      if (this.asyncProcess) queue.async();
       if (this.priorityMode) queue.priority();
       if (!this.fifoMode) queue.lifo();
       if (this.waitTimeout !== Infinity) queue.wait(this.waitTimeout);
@@ -266,13 +272,8 @@ class Queue {
     return this;
   }
 
-  promise() {
-    this.promiseMode = true;
-    return this;
-  }
-
-  callback() {
-    this.promiseMode = false;
+  async() {
+    this.asyncProcess = true;
     return this;
   }
 }
