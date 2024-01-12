@@ -137,7 +137,7 @@ test('Promise mode', () => {
   const job = (item) => new Promise((resolve) => void resolve(item));
   const queue = new Queue(1)
     .process(job)
-    .promise()
+    .async()
     .done((err, result) => {
       assert.strictEqual(err, null);
       assert.strictEqual(result.res, 'test');
