@@ -30,7 +30,7 @@ export class Queue {
   debounceTimeout: number;
   debounceCount: number;
   fifoMode: boolean;
-  promiseMode: boolean;
+  asyncProcess: boolean;
   roundRobinMode: boolean;
   priorityMode: boolean;
   debounceMode: boolean;
@@ -60,6 +60,5 @@ export class Queue {
   resume(): Queue;
   pause(): Queue;
   clear(): Queue;
-  promise(): Queue;
-  callback(): Queue;
+  async(): Queue;
 }
