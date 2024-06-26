@@ -1,11 +1,11 @@
 {
   "name": "conqueue",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Multifunctional Concurrent Queue",
   "main": "queue.js",
   "types": "queue.d.ts",
   "engines": {
-    "node": "16 || 18 || 20 || 21"
+    "node": "16 || 18 || 20 || 22"
   },
   "readmeFilename": "README.md",
   "repository": {
