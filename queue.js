@@ -17,7 +17,6 @@ class Queue {
     this.debounceInterval = 1000;
     this.debounceCount = 0;
     this.fifoMode = true;
-    this.asyncProcess = false;
     this.roundRobinMode = false;
     this.priorityMode = false;
     this.debounceMode = false;
@@ -62,15 +61,15 @@ class Queue {
       }, this.processTimeout);
     }
     if (typeof item === 'function') {
-      return void item().then((res) => void execute(null, res), execute);
-    }
-    if (!this.onProcess) {
-      throw new Error('Process is not defined');
-    }
-    if (!this.asyncProcess) {
-      this.onProcess(item, execute);
+      this.#runItem(item, execute);
     } else {
-      this.onProcess(item).then((res) => void execute(null, res), execute);
+      if (!this.onProcess) {
+        throw new Error('Process is not defined');
+      }
+      const result = this.onProcess(item, execute);
+      if (result && result.then) {
+        result.then((res) => void execute(null, res), execute);
+      }
     }
   }
 
@@ -295,11 +294,6 @@ class Queue {
 
   roundRobin(flag = true) {
     this.roundRobinMode = flag;
-    return this;
-  }
-
-  async() {
-    this.asyncProcess = true;
     return this;
   }
 }
