@@ -1,18 +1,18 @@
-# Conqueue
+# kuyruk
 
 <div align="center">
 
-[![ci Status](https://github.com/timursevimli/conqueue/workflows/Testing%20CI/badge.svg)](https://github.com/timursevimli/conqueue/actions?query=workflow%3A%22Testing+CI%22+branch%3Amaster)
-[![snyk](https://snyk.io/test/github/timursevimli/conqueue/badge.svg)](https://snyk.io/test/github/timursevimli/conqueue)
-[![npm downloads/month](https://img.shields.io/npm/dm/conqueue.svg)](https://www.npmjs.com/package/conqueue)
-[![npm downloads](https://img.shields.io/npm/dt/conqueue.svg)](https://www.npmjs.com/package/conqueue)
-[![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/timursevimli/conqueue/blob/master/LICENSE)
+[![ci Status](https://github.com/timursevimli/kuyruk/workflows/Testing%20CI/badge.svg)](https://github.com/timursevimli/kuyruk/actions?query=workflow%3A%22Testing+CI%22+branch%3Amaster)
+[![snyk](https://snyk.io/test/github/timursevimli/kuyruk/badge.svg)](https://snyk.io/test/github/timursevimli/kuyruk)
+[![npm downloads/month](https://img.shields.io/npm/dm/kuyruk.svg)](https://www.npmjs.com/package/kuyruk)
+[![npm downloads](https://img.shields.io/npm/dt/kuyruk.svg)](https://www.npmjs.com/package/kuyruk)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/timursevimli/kuyruk/blob/master/LICENSE)
 
 </div>
 
 ## Description
 
-**Conqueue** is a simple yet powerful asynchronous queue implementation for managing concurrency and controlling the flow of asynchronous tasks. It supports various modes, such as callbacks, promises, FIFO, LIFO, priority, factor and round-robin, providing flexibility for different use cases.
+**kuyruk** is a powerful asynchronous queue implementation for managing concurrency and controlling the flow of asynchronous tasks. It supports various modes, such as callbacks, promises, FIFO, LIFO, priority, factor and round-robin, providing flexibility for different use cases.
 
 ## Features
 
@@ -26,15 +26,15 @@
 ## Installation
 
 ```bash
-npm install conqueue
+npm install kuyruk
 ```
 
 ## Usage
 
 ```javascript
-const Queue = require('conqueue');
+const Queue = require('kuyruk');
 
-const job = (taskId, cb) => {
+const someAsyncTask = (taskId, cb) => {
   setTimeout(() => {
     if (taskId === 4) {
       cb(new Error('Biggest error!!!'));
@@ -46,7 +46,7 @@ const job = (taskId, cb) => {
 
 // Create a queue with a concurrency limit of 3
 const queue = new Queue(3)
-  .process(job)
+  .process(someAsyncTask)
   .done((err, res) => {
     if (err) console.error(err);
     else console.log(res);
