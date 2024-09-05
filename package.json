@@ -42,7 +42,7 @@
   },
   "homepage": "https://github.com/timursevimli/conqueue#readme",
   "scripts": {
-    "test": "npm run lint && npm run types && node test/unit.js",
+    "test": "npm run lint && npm run types && tap --disable-coverage run",
     "types": "tsc -p tsconfig.json",
     "lint": "eslint . && prettier --check \"**/*.js\" \"**/*.json\" \"**/*.md\" \"**/.*rc\" \"**/*.ts\"",
     "fmt": "prettier --write \"**/*.js\" \"**/*.json\" \"**/*.md\" \"**/.*rc\" \"**/*.ts\""
