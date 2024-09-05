@@ -1,10 +1,12 @@
 'use strict';
 
-const debounce = (fn, interval) => {
-  const debounced = (...args) => {
-    setTimeout(fn, interval, null, ...args);
-  };
-  return debounced;
-};
+// prettier-ignore
+const debounce =
+  (fn, interval) =>
+    (...args) => {
+      setTimeout(fn, interval, null, ...args);
+    };
 
-module.exports = { debounce };
+module.exports = {
+  debounce,
+};
