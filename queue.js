@@ -1,5 +1,6 @@
 'use strict';
 
+const { FixedQueue } = require('@tsevimli/collections');
 const { debounce } = require('./utils.js');
 
 class Queue {
@@ -7,7 +8,7 @@ class Queue {
     this.concurrency = concurrency;
     this.size = size;
     this.count = 0;
-    this.waiting = [];
+    this.waiting = new FixedQueue();
     this.destination = null;
     this.paused = false;
     this.factor = undefined;
