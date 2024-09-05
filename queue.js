@@ -97,73 +97,98 @@ class Queue {
     if (hasChannel) this.#next(task.item);
   }
 
+  #prepareProcessTimeout(execute) {
+    return setTimeout(() => {
+      const err = new Error('Process timed out!');
+      if (this.onTimeout) this.onTimeout(err);
+      execute(err);
+    }, this.processTimeout);
+  }
+
+  #runItem(item, execute) {
+    try {
+      const result = item();
+      if (result && typeof result.then === 'function') {
+        result.then((res) => void execute(null, res), execute);
+      } else {
+        execute(null, result);
+      }
+    } catch (err) {
+      execute(err);
+    }
+  }
+
+  #cloneQueue({ factor, item }) {
+    const queue = Queue.channels(this.concurrency)
+      .process(this.onProcess)
+      .setFactor(factor)
+      .add(item);
+
+    if (this.priorityMode) queue.priority();
+    if (!this.fifoMode) queue.lifo();
+    if (this.waitTimeout !== Infinity) queue.wait(this.waitTimeout);
+    if (this.processTimeout !== Infinity) {
+      queue.timeout(this.processTimeout, this.onTimeout);
+    }
+    if (this.debounceMode) {
+      queue.debounce(this.debounceCount, this.debounceInterval);
+    }
+    queue.finish = this.finish.bind(this);
+    return queue;
+  }
+
   finish(err, res) {
     const { onFailure, onSuccess, onDone, onDrain } = this;
+    const details = { factor: this.factor };
     if (err) {
-      if (onFailure) onFailure(err, res);
-    } else if (onSuccess) onSuccess(res);
-    if (onDone) onDone(err, res);
-    if (this.destination) this.destination.add(res.res);
-    if (!onDrain) return;
-    if (!this.roundRobinMode) {
-      if (this.count === 0 && this.waiting.length === 0) onDrain();
-    } else {
-      const queuesIsDrain = this.waiting.every(
-        (queue) => queue.waiting.length === 0 && queue.count === 0,
-      );
-      if (queuesIsDrain) onDrain();
+      if (onFailure) onFailure(err, res, details);
+    } else if (onSuccess) onSuccess(res, details);
+    if (onDone) onDone(err, res, details);
+    if (this.destination) this.destination.add(res);
+    if (onDrain) {
+      if (!this.roundRobinMode) {
+        if (this.count === 0 && this.waiting.length === 0) onDrain();
+      } else {
+        const queuesIsDrain = this.waiting.every(
+          (queue) => queue.waiting.length === 0 && queue.count === 0,
+        );
+        if (queuesIsDrain) onDrain();
+      }
     }
   }
 
   add(item, { factor = 0, priority = 0 } = {}) {
-    if (this.size <= this.waiting.length) return;
-    if (this.priorityMode && !this.roundRobinMode) {
-      priority = factor;
-      factor = 0;
-    }
-
-    if (this.roundRobinMode) {
-      let queue = this.waiting.find((q) => q.factor === factor);
-      if (queue) return void queue.add(item);
-      queue = Queue.channels(this.concurrency)
-        .pause()
-        .process(this.onProcess)
-        .setFactor(factor)
-        .add(item);
-
-      if (this.asyncProcess) queue.async();
-      if (this.priorityMode) queue.priority();
-      if (!this.fifoMode) queue.lifo();
-      if (this.waitTimeout !== Infinity) queue.wait(this.waitTimeout);
-      if (this.processTimeout !== Infinity) {
-        queue.timeout(this.processTimeout, this.onTimeout);
+    if (this.size > this.waiting.length) {
+      if (this.priorityMode && !this.roundRobinMode) {
+        priority = factor;
+        factor = 0;
       }
-      if (this.debounceMode) {
-        queue.debounce(this.debounceCount, this.debounceInterval);
+      if (this.roundRobinMode) {
+        let queue = this.waiting.find((q) => q.factor === factor);
+        if (queue) {
+          queue.add(item);
+        } else {
+          queue = this.#cloneQueue({ factor, item });
+          this.waiting.push(queue);
+        }
+      } else if (!this.paused && this.concurrency > this.count) {
+        this.#next(item);
+      } else {
+        const task = { item, priority, start: Date.now() };
+        if (this.fifoMode) this.waiting.push(task);
+        else this.waiting.unshift(task);
+        if (this.priorityMode) {
+          const compare = this.fifoMode ? (a, b) => b - a : (a, b) => a - b;
+          this.waiting.sort(({ priority: a }, { priority: b }) =>
+            compare(a, b),
+          );
+        }
       }
-
-      queue.finish = this.finish.bind(this);
-      this.waiting.push(queue);
-      return void queue.resume();
-    }
-
-    if (!this.paused && this.concurrency > this.count) {
-      return void this.#next(item);
-    }
-
-    const task = { item, priority, start: Date.now() };
-
-    if (this.fifoMode) this.waiting.push(task);
-    else this.waiting.unshift(task);
-
-    if (this.priorityMode) {
-      const compare = this.fifoMode ? (a, b) => b - a : (a, b) => a - b;
-      this.waiting.sort(({ priority: a }, { priority: b }) => compare(a, b));
     }
   }
 
   pipe(dest) {
-    if (!(dest instanceof Queue)) {
+    if (!Object.getPrototypeOf(dest) === Queue.prototype) {
       const msg = 'Pipe method only work with "Queue" instances';
       throw new Error(msg);
     }
