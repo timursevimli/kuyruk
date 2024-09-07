@@ -4,7 +4,7 @@ const { FixedQueue } = require('@tsevimli/collections');
 const { debounce } = require('./utils.js');
 
 class Queue {
-  constructor(concurrency, size = Infinity) {
+  constructor({ concurrency = 1, size = Infinity }) {
     this.concurrency = concurrency;
     this.size = size;
     this.count = 0;
@@ -28,8 +28,8 @@ class Queue {
     this.onDrain = null;
   }
 
-  static channels(concurrency, size) {
-    return new Queue(concurrency, size);
+  static channels({ concurrency, size }) {
+    return new Queue({ concurrency, size });
   }
 
   #next(item) {
