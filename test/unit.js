@@ -3,6 +3,7 @@
 const { test, plan } = require('tap');
 const Queue = require('../queue.js');
 
+plan(22);
 
 const items = new Array(10).fill('test').map((e, i) => e + i);
 
@@ -537,4 +538,36 @@ test('Priority', (t) => {
     const priority = max - i;
     queue.add(item, { priority });
   }
+});
+
+test('Details (positive factor)', (t) => {
+  t.plan(4);
+
+  const queue = new Queue({ concurrency: 3 })
+    .setFactor(3)
+    .process(() => Promise.resolve('test'))
+    .success((res, details) => {
+      t.equal(res, 'test');
+      t.ok(typeof details === 'object');
+      t.ok(details.hasOwnProperty('factor'));
+      t.equal(details.factor, 3);
+    });
+
+  queue.add('test');
+});
+
+test('Details with (negative factor)', (t) => {
+  t.plan(4);
+
+  const queue = new Queue({ concurrency: 3 })
+    .setFactor(0)
+    .process(() => Promise.resolve('test'))
+    .success((res, details) => {
+      t.equal(res, 'test');
+      t.ok(typeof details === 'object');
+      t.ok(details.hasOwnProperty('factor'));
+      t.equal(details.factor, 0);
+    });
+
+  queue.add('test');
 });
