@@ -50,7 +50,11 @@ class Queue {
         this.finish(err, res);
       }
     };
-    if (this.debounceMode && this.debounceCount-- > 0) {
+    if (
+      this.debounceMode &&
+      this.debounceInterval > 0 &&
+      this.debounceCount-- > 0
+    ) {
       execute = debounce(execute, this.debounceInterval);
     }
     if (this.processTimeout !== Infinity) {
