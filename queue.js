@@ -118,7 +118,8 @@ class Queue {
   }
 
   #cloneQueue({ factor, item }) {
-    const queue = Queue.channels(this.concurrency)
+    const { concurrency, size } = this;
+    const queue = Queue.channels({ concurrency, size })
       .process(this.onProcess)
       .setFactor(factor)
       .add(item);
