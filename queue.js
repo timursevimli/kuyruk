@@ -58,12 +58,7 @@ class Queue {
       execute = debounce(execute, this.debounceInterval);
     }
     if (this.processTimeout !== Infinity) {
-      timer = setTimeout(() => {
-        timer = null;
-        const err = new Error('Process timed out!');
-        if (this.onTimeout) this.onTimeout(err);
-        execute(err);
-      }, this.processTimeout);
+      timer = this.#prepareProcessTimeout(execute);
     }
     if (typeof item === 'function') {
       this.#runItem(item, execute);
