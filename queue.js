@@ -14,8 +14,8 @@ class Queue {
     this.factor = undefined;
     this.waitTimeout = Infinity;
     this.processTimeout = Infinity;
-    this.debounceInterval = 1000;
-    this.debounceCount = 0;
+    this.debounceInterval = 0;
+    this.debounceCount = Infinity;
     this.fifoMode = true;
     this.roundRobinMode = false;
     this.priorityMode = false;
