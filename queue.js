@@ -37,17 +37,18 @@ class Queue {
     let finished = false;
     this.count++;
     let execute = (err = null, res = item) => {
-      if (finished) return;
-      finished = true;
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
+      if (!finished) {
+        finished = true;
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        this.count--;
+        setTimeout(() => {
+          if (this.waiting.length > 0) this.#takeNext();
+        }, 0);
+        this.finish(err, res);
       }
-      this.count--;
-      setTimeout(() => {
-        if (this.waiting.length > 0) this.#takeNext();
-      }, 0);
-      this.finish(err, { res, from: this.factor });
     };
     if (this.debounceMode && this.debounceCount-- > 0) {
       execute = debounce(execute, this.debounceInterval);
