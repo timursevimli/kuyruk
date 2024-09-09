@@ -206,6 +206,10 @@ Clears the queue of all waiting tasks and resets internal counters.
 
 Pipes the result of the current queue to another queue. This will pass completed tasks from the current queue to the destination queue.
 
+Arguments:
+
+- `destinationQueue`: An instance of Kuyruk that will receive the results of completed tasks from the current queue. The tasks are passed to the destination queue for further processing or handling.
+
 ---
 
 <a name="timeout"></a>
