@@ -2,8 +2,8 @@
   "name": "kuyruk",
   "version": "0.0.5",
   "description": "Multifunctional Asynchronous Concurrent Queue",
-  "main": "queue.js",
-  "types": "queue.d.ts",
+  "main": "kuyruk.js",
+  "types": "kuyruk.d.ts",
   "engines": {
     "node": "16 || 18 || 20 || 22"
   },

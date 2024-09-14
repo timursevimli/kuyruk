@@ -3,7 +3,7 @@
 const { FixedQueue } = require('@tsevimli/collections');
 const { debounce } = require('./utils.js');
 
-class Queue {
+class Kuyruk {
   constructor({ concurrency = 1, size = Infinity }) {
     this.concurrency = concurrency;
     this.size = size;
@@ -29,7 +29,7 @@ class Queue {
   }
 
   static channels({ concurrency, size }) {
-    return new Queue({ concurrency, size });
+    return new Kuyruk({ concurrency, size });
   }
 
   #next(item) {
@@ -119,7 +119,7 @@ class Queue {
 
   #cloneQueue({ factor, item }) {
     const { concurrency, size } = this;
-    const queue = Queue.channels({ concurrency, size })
+    const queue = Kuyruk.channels({ concurrency, size })
       .process(this.onProcess)
       .setFactor(factor)
       .add(item);
@@ -188,16 +188,16 @@ class Queue {
   }
 
   pipe(dest) {
-    if (!Object.getPrototypeOf(dest) === Queue.prototype) {
-      const msg = 'Pipe method only work with "Queue" instances';
+    if (!Object.getPrototypeOf(dest) === Kuyruk.prototype) {
+      const msg = 'Pipe method only work with "Kuyruk" instances';
       throw new Error(msg);
     }
     this.destination = dest;
-    return { pipe: dest.pipe.bind(dest) };
+    return dest;
   }
 
-  timeout(msec = 1, onTimeout = null) {
-    if (msec < 1) {
+  timeout(msec = 0, onTimeout = null) {
+    if (msec <= 0) {
       const msg = 'Timeout interval must be greater than 0 milliseconds';
       throw new Error(msg);
     }
@@ -215,7 +215,7 @@ class Queue {
     return this;
   }
 
-  debounce(count = 0, interval = 1000) {
+  debounce(count = Infinity, interval = 0) {
     if (this.waitTimeout > 0 && interval > this.waitTimeout) {
       const msg = 'Cannot use debounce interval greater than wait timeout';
       throw new Error(msg);
@@ -299,4 +299,4 @@ class Queue {
   }
 }
 
-module.exports = Queue;
+module.exports = Kuyruk;

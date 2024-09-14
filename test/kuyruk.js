@@ -1,7 +1,7 @@
 'use strict';
 
 const { test, plan } = require('tap');
-const Queue = require('../queue.js');
+const Queue = require('../kuyruk.js');
 
 plan(22);
 
