@@ -3,26 +3,27 @@ interface AddOptions {
   priority?: number;
 }
 
-interface QueueResult {
-  res: unknown | unknown[];
-  from?: number;
+interface Details {
+  factor: number | undefined;
 }
 
 type ProcessFunction = (
-  arguments: unknown | unknown[],
+  args: unknown | unknown[],
 ) => unknown | Promise<unknown>;
 type TimeoutCallback = (err: Error) => void;
-type DoneCallback = (err?: Error, res?: QueueResult) => void;
-type SuccessCallback = (res: QueueResult) => void;
+type DoneCallback = (err: Error | null, res: unknown) => void;
+type SuccessCallback = (res: unknown) => void;
 type FailureCallback = (err: Error) => void;
 type DrainCallback = () => void;
 
-export class Queue {
+export class Kuyruk {
+  constructor(options?: { concurrency?: number; size?: number });
+  static channels(options?: { concurrency?: number; size?: number }): Kuyruk;
   concurrency: number;
   size: number;
   count: number;
   waiting: unknown[];
-  destination: Queue;
+  destination: Kuyruk;
   paused: boolean;
   factor: number;
   waitTimeout: number;
@@ -40,26 +41,22 @@ export class Queue {
   onTimeout: TimeoutCallback;
   onFailure: FailureCallback;
   onDrain: DrainCallback;
-  static channel(concurrency: number, size?: number): Queue;
-  constructor(concurrency: number, size?: number);
   add(item: unknown, options?: AddOptions): void;
-  pipe(destination: Queue): { pipe: (dest: Queue) => void };
-  timeout(msec: number, onTimeout: TimeoutCallback): Queue;
-  wait(msec: number): Queue;
-  debounce(count: number, interval: number): Queue;
-  process(job: ProcessFunction): Queue;
-  done(listener: DoneCallback): Queue;
-  success(listener: SuccessCallback): Queue;
-  failure(listener: FailureCallback): Queue;
-  drain(listener: DrainCallback): Queue;
-  priority(flag: boolean): Queue;
-  setFactor(factor: number): Queue;
-  roundRobin(flag: boolean): Queue;
-  fifo(): Queue;
-  lifo(): Queue;
-  resume(): Queue;
-  pause(): Queue;
-  clear(): Queue;
-  promise(): Queue;
-  callback(): Queue;
+  pipe(destination: Kuyruk): Kuyruk;
+  timeout(msec: number, onTimeout: TimeoutCallback): Kuyruk;
+  wait(msec: number): Kuyruk;
+  debounce(count: number, interval: number): Kuyruk;
+  process(job: ProcessFunction): Kuyruk;
+  done(listener: DoneCallback, details?: Details): Kuyruk;
+  success(listener: SuccessCallback, details?: Details): Kuyruk;
+  failure(listener: FailureCallback, details?: Details): Kuyruk;
+  drain(listener: DrainCallback): Kuyruk;
+  priority(flag: boolean): Kuyruk;
+  setFactor(factor: number): Kuyruk;
+  roundRobin(flag: boolean): Kuyruk;
+  fifo(): Kuyruk;
+  lifo(): Kuyruk;
+  resume(): Kuyruk;
+  pause(): Kuyruk;
+  clear(): Kuyruk;
 }
