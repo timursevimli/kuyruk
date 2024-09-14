@@ -1,7 +1,7 @@
 'use strict';
 
 const { test, plan } = require('tap');
-const Queue = require('../kuyruk.js');
+const { Kuyruk } = require('../kuyruk.js');
 
 plan(22);
 
@@ -10,7 +10,7 @@ const items = new Array(10).fill('test').map((e, i) => e + i);
 test('Done handling', (t) => {
   let doneCalled = false;
 
-  const queue = new Queue({ concurrency: 1 })
+  const queue = new Kuyruk({ concurrency: 1 })
     .process((item, callback) => {
       setTimeout(() => {
         callback(null, item);
@@ -35,7 +35,7 @@ test('Done handling', (t) => {
 test('Success handling', (t) => {
   let successCalled = false;
 
-  const queue = new Queue({ concurrency: 1 })
+  const queue = new Kuyruk({ concurrency: 1 })
     .process((item, callback) => {
       setTimeout(() => {
         callback(null, item);
@@ -59,7 +59,7 @@ test('Success handling', (t) => {
 test('Error handling', (t) => {
   let failureCalled = false;
 
-  const queue = new Queue({ concurrency: 1 })
+  const queue = new Kuyruk({ concurrency: 1 })
     .process((item, callback) => {
       setTimeout(() => {
         callback(new Error('Task failed'), item);
@@ -85,7 +85,7 @@ test('Timeout handling', (t) => {
   let failureCalled = false;
   let timer = null;
 
-  const queue = new Queue({ concurrency: 1 })
+  const queue = new Kuyruk({ concurrency: 1 })
     .process((item, callback) => {
       timer = setTimeout(() => {
         t.fail('Never should this line');
@@ -117,7 +117,7 @@ test('Timeout handling', (t) => {
 test('Wait handling', (t) => {
   let failureCalled = false;
 
-  const queue = new Queue({ concurrency: 1 })
+  const queue = new Kuyruk({ concurrency: 1 })
     .wait(25)
     .pause()
     .process((item, callback) => {
@@ -148,7 +148,7 @@ test('Wait handling', (t) => {
 test('Pause handling', (t) => {
   let doneCalled = false;
 
-  const queue = new Queue({ concurrency: 1 })
+  const queue = new Kuyruk({ concurrency: 1 })
     .pause()
     .process((item, callback) => {
       setTimeout(() => {
@@ -171,7 +171,7 @@ test('Pause handling', (t) => {
 test('Resume handling', (t) => {
   let doneCalled = false;
 
-  const queue = new Queue({ concurrency: 1 })
+  const queue = new Kuyruk({ concurrency: 1 })
     .pause()
     .process((item, callback) => {
       setTimeout(() => {
@@ -200,7 +200,7 @@ test('Resume handling', (t) => {
 test('Drain handling', (t) => {
   let drainCalled = false;
 
-  const queue = new Queue({ concurrency: 1 })
+  const queue = new Kuyruk({ concurrency: 1 })
     .process((item, callback) => {
       setTimeout(() => {
         callback(null, item);
@@ -222,7 +222,7 @@ test('Drain handling', (t) => {
 test('Should task handling: promise', (t) => {
   const results = [];
 
-  const queue = new Queue({ concurrency: 1 })
+  const queue = new Kuyruk({ concurrency: 1 })
     .process(
       (item) =>
         new Promise((resolve) => {
@@ -250,7 +250,7 @@ test('Should task handling: promise', (t) => {
 test('Should task handling: callback', (t) => {
   const results = [];
 
-  const queue = new Queue({ concurrency: 1 })
+  const queue = new Kuyruk({ concurrency: 1 })
     .process((item, cb) => {
       setTimeout(() => {
         cb(null, item);
@@ -275,7 +275,7 @@ test('Should task handling: callback', (t) => {
 test('Should task handling: promise', (t) => {
   const results = [];
 
-  const queue = new Queue({ concurrency: 1 })
+  const queue = new Kuyruk({ concurrency: 1 })
     .done((err, res) => {
       t.equal(err, null);
       t.ok(items.includes(res));
@@ -302,7 +302,7 @@ test('Should task handling: promise', (t) => {
 test('Should task handling: multiple', (t) => {
   const results = [];
 
-  const queue = new Queue({ concurrency: 1 })
+  const queue = new Kuyruk({ concurrency: 1 })
     .process((item, callback) => {
       setTimeout(() => {
         callback(null, item);
@@ -337,7 +337,7 @@ test('Concurrency handling', (t) => {
   const taskCount = 50;
   const concurrency = 5;
 
-  const queue = new Queue({ concurrency })
+  const queue = new Kuyruk({ concurrency })
     .process((item, callback) => {
       setTimeout(callback, 0, null, item);
     })
@@ -356,7 +356,7 @@ test('Concurrency handling', (t) => {
 test('Queue size handling', (t) => {
   const size = 10;
 
-  const queue = new Queue({ concurrency: 1, size })
+  const queue = new Kuyruk({ concurrency: 1, size })
     .process((item, callback) => {
       setTimeout(callback, 100, null, item);
     })
@@ -378,7 +378,7 @@ test('Queue size handling', (t) => {
 });
 
 test('Should add task without process', (t) => {
-  const queue = new Queue({ concurrency: 1 }).done(() => {
+  const queue = new Kuyruk({ concurrency: 1 }).done(() => {
     t.fail('Never should this line');
   });
 
@@ -393,7 +393,7 @@ test('Should add task without process', (t) => {
 });
 
 test('Queue pipe handling', (t) => {
-  const dest1 = new Queue({ concurrency: 1 })
+  const dest1 = new Kuyruk({ concurrency: 1 })
     .process((item, callback) => {
       setTimeout(() => {
         callback(null, item);
@@ -404,7 +404,7 @@ test('Queue pipe handling', (t) => {
       t.ok(items.includes(res));
     });
 
-  const dest2 = new Queue({ concurrency: 1 })
+  const dest2 = new Kuyruk({ concurrency: 1 })
     .process((item, callback) => {
       setTimeout(() => {
         callback(null, item);
@@ -415,7 +415,7 @@ test('Queue pipe handling', (t) => {
       t.ok(items.includes(res));
     });
 
-  const queue = new Queue({ concurrency: 1 })
+  const queue = new Kuyruk({ concurrency: 1 })
     .process((item, callback) => {
       setTimeout(() => {
         callback(null, item);
@@ -436,9 +436,9 @@ test('Queue pipe handling', (t) => {
 });
 
 test('Should queue clear', (t) => {
-  const queue = new Queue({ concurrency: 1 }).pause();
+  const queue = new Kuyruk({ concurrency: 1 }).pause();
 
-  const dest = new Queue({ concurrency: 1 });
+  const dest = new Kuyruk({ concurrency: 1 });
 
   queue.pipe(dest);
 
@@ -461,7 +461,7 @@ test('Should queue clear', (t) => {
 test('Fifo', (t) => {
   let i = 0;
 
-  const queue = new Queue({ concurrency: 1 })
+  const queue = new Kuyruk({ concurrency: 1 })
     .process((item, callback) => {
       setTimeout(() => {
         callback(null, item);
@@ -481,7 +481,7 @@ test('Fifo', (t) => {
 test('Lifo', (t) => {
   let i = items.length - 1;
 
-  const queue = new Queue({ concurrency: 1 })
+  const queue = new Kuyruk({ concurrency: 1 })
     .lifo()
     .pause()
     .process((item, callback) => {
@@ -517,7 +517,7 @@ test('Priority', (t) => {
   ];
   let i = 0;
 
-  const queue = new Queue({ concurrency: 3 })
+  const queue = new Kuyruk({ concurrency: 3 })
     .priority()
     .process((item, callback) => {
       setTimeout(() => {
@@ -543,7 +543,7 @@ test('Priority', (t) => {
 test('Details (positive factor)', (t) => {
   t.plan(4);
 
-  const queue = new Queue({ concurrency: 3 })
+  const queue = new Kuyruk({ concurrency: 3 })
     .setFactor(3)
     .process(() => Promise.resolve('test'))
     .success((res, details) => {
@@ -559,7 +559,7 @@ test('Details (positive factor)', (t) => {
 test('Details with (negative factor)', (t) => {
   t.plan(4);
 
-  const queue = new Queue({ concurrency: 3 })
+  const queue = new Kuyruk({ concurrency: 3 })
     .setFactor(0)
     .process(() => Promise.resolve('test'))
     .success((res, details) => {
