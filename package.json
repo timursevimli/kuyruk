@@ -1,6 +1,6 @@
 {
   "name": "kuyruk",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Multifunctional Asynchronous Concurrent Queue",
   "main": "kuyruk.js",
   "types": "kuyruk.d.ts",
