@@ -299,4 +299,4 @@ class Kuyruk {
   }
 }
 
-module.exports = Kuyruk;
+module.exports = { Kuyruk };
