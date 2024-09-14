@@ -22,9 +22,7 @@
 ## Usage (promise API)
 
 ```js
-'use strict';
-
-const Kuyruk = require('kuyruk');
+const { Kuyruk } = require('kuyruk');
 
 const queue = new Kuyruk({ concurrency: 3 });
 
@@ -51,7 +49,7 @@ for (let i = 0; i < 10; i++) {
 ## Usage (callback process API)
 
 ```js
-const Kuyruk = require('kuyruk');
+const { Kuyruk } = require('kuyruk');
 
 const queue = new Kuyruk({ concurrency: 3 });
 
@@ -78,7 +76,7 @@ for (let i = 0; i < 10; i++) {
 ## Usage (asynchronous process API)
 
 ```js
-const Kuyruk = require('kuyruk');
+const { Kuyruk } = require('kuyruk');
 
 const queue = new Kuyruk({ concurrency: 3 });
 
