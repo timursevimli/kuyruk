@@ -67,7 +67,7 @@ class Kuyruk {
         throw new Error('Process is not defined');
       }
       const result = this.onProcess(item, execute);
-      if (result && result.then) {
+      if (result && typeof result.then === 'function') {
         result.then((res) => void execute(null, res), execute);
       }
     }
