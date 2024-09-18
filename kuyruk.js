@@ -143,7 +143,10 @@ class Kuyruk {
     const details = { factor: this.factor };
     if (err) {
       if (onFailure) onFailure(err, res, details);
-    } else if (onSuccess) onSuccess(res, details);
+      else throw err;
+    } else if (onSuccess) {
+      onSuccess(res, details);
+    }
     if (onDone) onDone(err, res, details);
     if (this.destination) this.destination.add(res);
     if (onDrain) {
