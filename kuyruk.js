@@ -74,26 +74,27 @@ class Kuyruk {
   }
 
   #takeNext() {
-    if (this.paused) return;
-    const { waiting, waitTimeout } = this;
-    const task = waiting.shift();
-    if (waitTimeout !== Infinity) {
-      const delay = Date.now() - task.start;
-      if (delay > waitTimeout) {
-        const err = new Error('Waiting timed out');
-        this.finish(err, task.item);
-        if (waiting.length > 0) {
-          setTimeout(() => {
-            if (!this.paused && waiting.length > 0) {
-              this.#takeNext();
-            }
-          }, 0);
+    if (!this.paused) {
+      const { waiting, waitTimeout } = this;
+      const task = waiting.shift();
+      if (waitTimeout !== Infinity) {
+        const delay = Date.now() - task.start;
+        if (delay > waitTimeout) {
+          const err = new Error('Waiting timed out');
+          this.finish(err, task.item);
+          if (waiting.length > 0) {
+            setTimeout(() => {
+              if (!this.paused && waiting.length > 0) {
+                this.#takeNext();
+              }
+            }, 0);
+          }
+          return;
         }
-        return;
       }
+      const hasChannel = this.count < this.concurrency;
+      if (hasChannel) this.#next(task.item);
     }
-    const hasChannel = this.count < this.concurrency;
-    if (hasChannel) this.#next(task.item);
   }
 
   #prepareProcessTimeout(execute) {
