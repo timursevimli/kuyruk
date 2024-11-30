@@ -440,9 +440,13 @@ test('Queue pipe handling', (t) => {
 });
 
 test('Should queue clear', (t) => {
-  const queue = new Kuyruk({ concurrency: 1 }).pause();
+  const queue = new Kuyruk({ concurrency: 1 }).pause().done(() => {
+    t.fail('Never should this line');
+  });
 
-  const dest = new Kuyruk({ concurrency: 1 });
+  const dest = new Kuyruk({ concurrency: 1 }).done(() => {
+    t.fail('Never should this line');
+  });
 
   queue.pipe(dest);
 
@@ -455,7 +459,7 @@ test('Should queue clear', (t) => {
   t.equal(queue.waiting.length, 3);
   t.equal(queue.destination, dest);
 
-  queue.clear();
+  queue.clear().resume();
 
   t.equal(queue.waiting.length, 0);
   t.equal(queue.count, 0);
