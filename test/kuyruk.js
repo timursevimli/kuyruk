@@ -536,9 +536,7 @@ test('Priority', (t) => {
       t.equal(res, cases[i++]);
     });
 
-  t.plan(cases.length + 1);
-
-  t.equal(cases.length, cases.length);
+  t.plan(cases.length);
 
   const max = cases.length;
   for (let i = 0; i < max; i++) {
