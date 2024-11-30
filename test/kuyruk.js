@@ -426,9 +426,13 @@ test('Queue pipe handling', (t) => {
       t.ok(items.includes(res));
     });
 
-  t.plan(6 * items.length);
+  t.plan(6 * items.length + 3);
 
   queue.pipe(dest1).pipe(dest2);
+
+  t.equal(queue.destination, dest1);
+  t.equal(dest1.destination, dest2);
+  t.equal(dest2.destination, null);
 
   for (const item of items) {
     queue.add(item);
