@@ -27,22 +27,11 @@ const { Kuyruk } = require('kuyruk');
 const queue = new Kuyruk({ concurrency: 3 });
 
 queue
-  .success((result) => {
-    console.log(result);
-  })
-  .drain(() => {
-    console.log('all done!');
-  });
-
-const someAsyncFn = (num) =>
-  new Promise((resolve) => {
-    setTimeout(() => {
-      resolve(num);
-    }, 0);
-  });
+  .success((result) => console.log(result))
+  .drain(() => console.log('all done!'));
 
 for (let i = 0; i < 10; i++) {
-  queue.add(() => someAsyncFn(i));
+  queue.add(() => Promise.resolve(i));
 }
 ```
 
@@ -53,20 +42,10 @@ const { Kuyruk } = require('kuyruk');
 
 const queue = new Kuyruk({ concurrency: 3 });
 
-const someTaskOnCallback = (num, cb) => {
-  setTimeout(() => {
-    cb(null, num);
-  }, 0);
-};
-
 queue
-  .process(someTaskOnCallback)
-  .success((result) => {
-    console.log(result);
-  })
-  .drain(() => {
-    console.log('all done!');
-  });
+  .process((num, cb) => cb(null, num))
+  .success((result) => console.log(result))
+  .drain(() => console.log('all done!'));
 
 for (let i = 0; i < 10; i++) {
   queue.add(i);
@@ -80,22 +59,10 @@ const { Kuyruk } = require('kuyruk');
 
 const queue = new Kuyruk({ concurrency: 3 });
 
-const someAsyncTask = (num) => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve(num);
-    }, 0);
-  });
-};
-
 queue
-  .process(someAsyncTask)
-  .success((result) => {
-    console.log(result);
-  })
-  .drain(() => {
-    console.log('all done!');
-  });
+  .process((num) => Promise.resolve(num))
+  .success((result) => console.log(result))
+  .drain(() => console.log('all done!'));
 
 for (let i = 0; i < 10; i++) {
   queue.add(i);
