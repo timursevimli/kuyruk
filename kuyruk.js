@@ -191,6 +191,10 @@ class Kuyruk {
     }
   }
 
+  isEmpty() {
+    return this.waiting.length === 0 && this.count === 0;
+  }
+
   pipe(dest) {
     if (!Object.getPrototypeOf(dest) === Kuyruk.prototype) {
       const msg = 'Pipe method only work with "Kuyruk" instances';

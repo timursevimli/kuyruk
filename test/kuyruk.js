@@ -3,7 +3,7 @@
 const { test, plan } = require('tap');
 const { Kuyruk } = require('../kuyruk.js');
 
-plan(22);
+plan(23);
 
 const items = new Array(10).fill('test').map((e, i) => e + i);
 
@@ -576,4 +576,19 @@ test('Details with (negative factor)', (t) => {
     });
 
   queue.add('test');
+});
+
+test('Queue empty method handling', (t) => {
+  t.plan(3);
+
+  const queue = new Kuyruk({ concurrency: 1 });
+  t.equal(queue.isEmpty(), true);
+
+  queue
+    .process(() => Promise.resolve('test'))
+    .drain(() => {
+      t.equal(queue.isEmpty(), true);
+    })
+    .add('test');
+  t.equal(queue.isEmpty(), false);
 });
