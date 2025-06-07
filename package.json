@@ -1,11 +1,11 @@
 {
   "name": "kuyruk",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Multifunctional Asynchronous Concurrent Queue",
   "main": "kuyruk.js",
   "types": "kuyruk.d.ts",
   "engines": {
-    "node": "16 || 18 || 20 || 22"
+    "node": "16 || 18 || 20 || 22 || 24"
   },
   "readmeFilename": "README.md",
   "repository": {
