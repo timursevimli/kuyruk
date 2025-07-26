@@ -3,7 +3,7 @@
 const { test, plan } = require('tap');
 const { Kuyruk } = require('../kuyruk.js');
 
-plan(23);
+plan(24);
 
 const items = new Array(10).fill('test').map((e, i) => e + i);
 
@@ -591,4 +591,19 @@ test('Queue empty method handling', (t) => {
     })
     .add('test');
   t.equal(queue.isEmpty(), false);
+});
+
+test('Add return handling (boolean)', (t) => {
+  t.plan(2);
+
+  const queue = new Kuyruk({ concurrency: 1, size: 1 }).pause();
+
+  t.equal(
+    queue.add(async () => {}),
+    true,
+  );
+  t.equal(
+    queue.add(async () => {}),
+    false,
+  );
 });

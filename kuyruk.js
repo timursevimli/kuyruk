@@ -162,33 +162,31 @@ class Kuyruk {
   }
 
   add(item, { factor = 0, priority = 0 } = {}) {
-    if (this.size > this.waiting.length) {
-      if (this.priorityMode && !this.roundRobinMode) {
-        priority = factor;
-        factor = 0;
-      }
-      if (this.roundRobinMode) {
-        let queue = this.waiting.find((q) => q.factor === factor);
-        if (queue) {
-          queue.add(item);
-        } else {
-          queue = this.#cloneQueue({ factor, item });
-          this.waiting.push(queue);
-        }
-      } else if (!this.paused && this.concurrency > this.count) {
-        this.#next(item);
+    if (this.size <= this.waiting.length) return false;
+    if (this.priorityMode && !this.roundRobinMode) {
+      priority = factor;
+      factor = 0;
+    }
+    if (this.roundRobinMode) {
+      let queue = this.waiting.find((q) => q.factor === factor);
+      if (queue) {
+        queue.add(item);
       } else {
-        const task = { item, priority, start: Date.now() };
-        if (this.fifoMode) this.waiting.push(task);
-        else this.waiting.unshift(task);
-        if (this.priorityMode) {
-          const compare = this.fifoMode ? (a, b) => b - a : (a, b) => a - b;
-          this.waiting.sort(({ priority: a }, { priority: b }) =>
-            compare(a, b),
-          );
-        }
+        queue = this.#cloneQueue({ factor, item });
+        this.waiting.push(queue);
+      }
+    } else if (!this.paused && this.concurrency > this.count) {
+      this.#next(item);
+    } else {
+      const task = { item, priority, start: Date.now() };
+      if (this.fifoMode) this.waiting.push(task);
+      else this.waiting.unshift(task);
+      if (this.priorityMode) {
+        const compare = this.fifoMode ? (a, b) => b - a : (a, b) => a - b;
+        this.waiting.sort(({ priority: a }, { priority: b }) => compare(a, b));
       }
     }
+    return true;
   }
 
   isEmpty() {
