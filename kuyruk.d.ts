@@ -42,7 +42,7 @@ export class Kuyruk {
   onFailure: FailureCallback;
   onDrain: DrainCallback;
   isEmpty(): boolean;
-  add(item: unknown, options?: AddOptions): void;
+  add(item: unknown, options?: AddOptions): boolean;
   pipe(destination: Kuyruk): Kuyruk;
   timeout(msec: number, onTimeout: TimeoutCallback): Kuyruk;
   wait(msec: number): Kuyruk;
