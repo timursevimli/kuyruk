@@ -47,7 +47,8 @@ class Kuyruk {
         setTimeout(() => {
           if (this.waiting.length > 0) this.#takeNext();
         }, 0);
-        this.finish(err, res);
+        const details = { factor: this.factor };
+        this.finish(err, res, details);
       }
     };
     if (
@@ -138,9 +139,8 @@ class Kuyruk {
     return queue;
   }
 
-  finish(err, res) {
+  finish(err, res, details = {}) {
     const { onFailure, onSuccess, onDone, onDrain } = this;
-    const details = { factor: this.factor };
     if (err) {
       if (onFailure) onFailure(err, res, details);
       else throw err;
