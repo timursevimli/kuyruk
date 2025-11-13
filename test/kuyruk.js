@@ -3,7 +3,7 @@
 const { test, plan } = require('tap');
 const { Kuyruk } = require('../kuyruk.js');
 
-plan(24);
+plan(27);
 
 const items = new Array(10).fill('test').map((e, i) => e + i);
 
@@ -606,4 +606,58 @@ test('Add return handling (boolean)', (t) => {
     queue.add(async () => {}),
     false,
   );
+});
+
+test('RoundRobin channels: create and reuse by factor', (t) => {
+  t.plan(4);
+
+  const queue = new Kuyruk({ concurrency: 1 })
+    .roundRobin()
+    .process((item, cb) => void setTimeout(cb, 0, null, item));
+
+  t.equal(queue.waiting.length, 0);
+
+  queue.add('a', { factor: 1 });
+  t.equal(queue.waiting.length, 1);
+
+  queue.add('b', { factor: 2 });
+  t.equal(queue.waiting.length, 2);
+
+  queue.add('c', { factor: 1 });
+  t.equal(queue.waiting.length, 2);
+});
+
+test('RoundRobin size limit applies to distinct factors', (t) => {
+  t.plan(3);
+
+  const queue = new Kuyruk({ concurrency: 1, size: 2 })
+    .roundRobin()
+    .process(() => Promise.resolve());
+
+  t.equal(queue.add('a', { factor: 1 }), true);
+  t.equal(queue.add('b', { factor: 2 }), true);
+  t.equal(queue.add('c', { factor: 3 }), false);
+});
+
+test('RoundRobin drain across multiple factors', (t) => {
+  t.plan(6);
+  const factors = { a: 1, b: 2, c: 3 };
+
+  const queue = new Kuyruk({ concurrency: 2 })
+    .roundRobin()
+    .process((item, cb) => void setTimeout(cb, 0, null, item))
+    .success((res, details) => {
+      console.log({ res, details });
+      const expected = factors[res];
+      t.equal(details.factor, expected);
+    })
+    .drain(() => {
+      t.pass('drained');
+    });
+
+  queue.add('a', { factor: 1 });
+  queue.add('a', { factor: 1 });
+  queue.add('b', { factor: 2 });
+  queue.add('b', { factor: 2 });
+  queue.add('c', { factor: 3 });
 });
