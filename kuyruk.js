@@ -122,8 +122,7 @@ class Kuyruk {
     const { concurrency, size } = this;
     const queue = Kuyruk.channels({ concurrency, size })
       .process(this.onProcess)
-      .setFactor(factor)
-      .add(item);
+      .setFactor(factor);
 
     if (this.priorityMode) queue.priority();
     if (!this.fifoMode) queue.lifo();
@@ -135,6 +134,7 @@ class Kuyruk {
       queue.debounce(this.debounceCount, this.debounceInterval);
     }
     queue.finish = this.finish.bind(this);
+    queue.add(item);
     return queue;
   }
 
