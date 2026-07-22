@@ -91,6 +91,39 @@ for (let i = 0; i < 10; i++) {
 - **Automatic Task Retry with Debouncing**: Retry tasks automatically if debouncing is enabled, minimizing redundant operations during high-load periods.
 - **Customizable Task Factor**: Assign tasks to specific channels using the `factor` parameter, which can be helpful for task categorization or grouping.
 
+## Monitoring (optional)
+
+kuyruk ships with an opt-in, zero-dependency real-time dashboard. Attach it to
+any queue and open the printed URL in a browser:
+
+```js
+const { Kuyruk } = require('kuyruk');
+const { monitor } = require('kuyruk/monitor');
+
+const queue = new Kuyruk({ concurrency: 5 });
+monitor(queue, { port: 8228 }); // kuyruk monitor: http://127.0.0.1:8228
+```
+
+The dashboard streams live queue activity over SSE and shows:
+
+- Active tasks vs. concurrency (per-channel occupancy), waiting vs. size limit
+- Success / failure / timeout / rejected counters and throughput per second
+- Average wait time in queue and average processing time
+- Queue configuration badges (FIFO/LIFO, priority, round-robin, debounce,
+  timeouts, paused state)
+- Per-factor queue breakdown in round-robin mode
+- A live event log (task lifecycle, pause/resume/clear)
+
+Notes:
+
+- The monitor instruments the queue in-process (wraps `add`, `process`,
+  `finish`, `pause`, `resume`, `clear`) and adds no overhead when no browser
+  is connected beyond a cheap wrapper call per task.
+- The server binds to `127.0.0.1` by default and never keeps your process
+  alive (`unref`). Call the returned `stop()` to shut it down explicitly.
+- Wait-time measurement for data items is matched FIFO, so it is approximate
+  in LIFO/priority modes.
+
 ## API
 
 - <a href="#queue"><code>Kuyruk()</code></a>

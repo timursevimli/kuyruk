@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>kuyruk monitor</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>" />
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.1);
+    --series-1: #2a78d6;
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+    --status-serious: #ec835a;
+    --status-critical: #d03b3b;
+    --good-text: #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255, 255, 255, 0.1);
+      --series-1: #3987e5;
+      --good-text: #0ca30c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 20px;
+    background: var(--page);
+    color: var(--text-primary);
+    font: 14px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  h1 { font-size: 18px; font-weight: 650; margin: 0; }
+  .conn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .conn .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--status-critical);
+  }
+  .conn.on .dot { background: var(--status-good); }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+  .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-secondary);
+    background: var(--surface-1);
+  }
+  .badge.paused {
+    color: var(--status-serious);
+    border-color: var(--status-serious);
+    font-weight: 600;
+  }
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .tile {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .tile .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .tile .value { font-size: 24px; font-weight: 650; margin-top: 2px; }
+  .tile .sub { font-size: 11px; color: var(--text-muted); }
+  .mark {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+  }
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0 0 10px;
+    color: var(--text-secondary);
+  }
+  .slots { display: flex; gap: 4px; flex-wrap: wrap; }
+  .slot {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    border: 1px solid var(--baseline);
+    background: transparent;
+  }
+  .slot.busy { background: var(--series-1); border-color: var(--series-1); }
+  .rr-table td, .rr-table th, .log-table td, .log-table th {
+    padding: 4px 10px 4px 0;
+    text-align: left;
+    font-size: 12.5px;
+    border-bottom: 1px solid var(--grid);
+  }
+  table { border-collapse: collapse; width: 100%; }
+  th {
+    color: var(--text-muted);
+    font-weight: 500;
+    font-size: 11px !important;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .num { font-variant-numeric: tabular-nums; }
+  #chartbox { position: relative; }
+  #chart { width: 100%; height: 160px; display: block; }
+  #tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 9px;
+    font-size: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    display: none;
+    white-space: nowrap;
+  }
+  #tooltip .t { color: var(--text-muted); font-size: 11px; }
+  .log-wrap { max-height: 300px; overflow-y: auto; }
+  .ev {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 500;
+  }
+  .ev .ic { font-size: 11px; }
+  .ev-success { color: var(--good-text); }
+  .ev-failure { color: var(--status-critical); }
+  .ev-timeout { color: var(--status-serious); }
+  .ev-rejected { color: var(--status-serious); }
+  .ev-neutral { color: var(--text-secondary); }
+  .muted { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>kuyruk monitor</h1>
+    <span class="conn" id="conn"><span class="dot"></span>
+      <span id="connText">connecting…</span></span>
+    <div class="badges" id="badges"></div>
+  </header>
+
+  <div class="tiles">
+    <div class="tile">
+      <div class="label"><span class="mark"
+        style="background: var(--series-1)"></span>Active</div>
+      <div class="value num" id="tActive">0</div>
+      <div class="sub" id="tActiveSub">of — channels</div>
+    </div>
+    <div class="tile">
+      <div class="label">Waiting</div>
+      <div class="value num" id="tWaiting">0</div>
+      <div class="sub" id="tWaitingSub">unbounded</div>
+    </div>
+    <div class="tile">
+      <div class="label"><span class="ic">✓</span>Succeeded</div>
+      <div class="value num" id="tSuccess"
+        style="color: var(--good-text)">0</div>
+    </div>
+    <div class="tile">
+      <div class="label"><span class="ic">✕</span>Failed</div>
+      <div class="value num" id="tFailure"
+        style="color: var(--status-critical)">0</div>
+    </div>
+    <div class="tile">
+      <div class="label"><span class="ic">⏱</span>Timed out</div>
+      <div class="value num" id="tTimeout"
+        style="color: var(--status-serious)">0</div>
+    </div>
+    <div class="tile">
+      <div class="label"><span class="ic">⛔</span>Rejected (full)</div>
+      <div class="value num" id="tRejected">0</div>
+    </div>
+    <div class="tile">
+      <div class="label">Throughput</div>
+      <div class="value num" id="tRate">0<span class="sub"> /s</span></div>
+    </div>
+    <div class="tile">
+      <div class="label">Avg wait</div>
+      <div class="value num" id="tWait">—</div>
+      <div class="sub">time in queue</div>
+    </div>
+    <div class="tile">
+      <div class="label">Avg exec</div>
+      <div class="value num" id="tExec">—</div>
+      <div class="sub">processing time</div>
+    </div>
+  </div>
+
+  <div class="card" id="channelsCard">
+    <h2 id="channelsTitle">Channels</h2>
+    <div class="slots" id="slots"></div>
+    <div id="rr" style="display: none"></div>
+  </div>
+
+  <div class="card">
+    <h2>Completed tasks per second — last 60 s</h2>
+    <div id="chartbox">
+      <svg id="chart" preserveAspectRatio="none"></svg>
+      <div id="tooltip"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Event log <span class="muted" id="logCount"></span></h2>
+    <div class="log-wrap">
+      <table class="log-table">
+        <thead><tr><th>Time</th><th>Event</th><th>Detail</th></tr></thead>
+        <tbody id="log"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+
+  const counters = {
+    success: 0, failure: 0, timeout: 0, rejected: 0, added: 0,
+  };
+  const waits = [];
+  const execs = [];
+  const BUCKETS = 60;
+  const buckets = new Array(BUCKETS).fill(0);
+  let bucketBase = Math.floor(Date.now() / 1000);
+  let state = null;
+  let logRows = 0;
+
+  const rotateBuckets = () => {
+    const now = Math.floor(Date.now() / 1000);
+    let shift = now - bucketBase;
+    if (shift <= 0) return;
+    if (shift > BUCKETS) shift = BUCKETS;
+    buckets.splice(0, shift);
+    for (let i = 0; i < shift; i++) buckets.push(0);
+    bucketBase = now;
+  };
+
+  const pushSample = (arr, v) => {
+    arr.push(v);
+    if (arr.length > 200) arr.shift();
+  };
+
+  const avg = (arr) => {
+    if (arr.length === 0) return null;
+    return arr.reduce((s, v) => s + v, 0) / arr.length;
+  };
+
+  const fmtMs = (v) => {
+    if (v === null) return '—';
+    if (v < 1000) return Math.round(v) + ' ms';
+    return (v / 1000).toFixed(2) + ' s';
+  };
+
+  const EV_META = {
+    success: { cls: 'ev-success', ic: '✓', label: 'success' },
+    failure: { cls: 'ev-failure', ic: '✕', label: 'failure' },
+    timeout: { cls: 'ev-timeout', ic: '⏱', label: 'timeout' },
+    rejected: { cls: 'ev-rejected', ic: '⛔', label: 'rejected' },
+    added: { cls: 'ev-neutral', ic: '＋', label: 'added' },
+    start: { cls: 'ev-neutral', ic: '▶', label: 'start' },
+    pause: { cls: 'ev-neutral', ic: '⏸', label: 'pause' },
+    resume: { cls: 'ev-neutral', ic: '⏵', label: 'resume' },
+    clear: { cls: 'ev-neutral', ic: '⌫', label: 'clear' },
+  };
+
+  const logEvent = (msg, detail) => {
+    const meta = EV_META[msg.type];
+    if (!meta) return;
+    const tr = document.createElement('tr');
+    const time = new Date(msg.ts).toLocaleTimeString();
+    tr.innerHTML =
+      '<td class="num muted">' + time + '</td>' +
+      '<td><span class="ev ' + meta.cls + '"><span class="ic">' +
+      meta.ic + '</span>' + meta.label + '</span></td>' +
+      '<td class="muted"></td>';
+    tr.lastChild.textContent = detail || '';
+    const log = $('log');
+    log.prepend(tr);
+    logRows++;
+    while (log.children.length > 100) log.removeChild(log.lastChild);
+    $('logCount').textContent = '(' + logRows + ' total)';
+  };
+
+  const renderBadges = () => {
+    if (!state) return;
+    const b = [];
+    if (state.paused) b.push('<span class="badge paused">⏸ paused</span>');
+    b.push('<span class="badge">' + (state.fifo ? 'FIFO' : 'LIFO') +
+      '</span>');
+    if (state.priority) b.push('<span class="badge">priority</span>');
+    if (state.roundRobin) b.push('<span class="badge">round-robin</span>');
+    if (state.debounce) b.push('<span class="badge">debounce</span>');
+    if (state.processTimeout !== null) {
+      b.push('<span class="badge">exec timeout ' + state.processTimeout +
+        ' ms</span>');
+    }
+    if (state.waitTimeout !== null) {
+      b.push('<span class="badge">wait timeout ' + state.waitTimeout +
+        ' ms</span>');
+    }
+    $('badges').innerHTML = b.join('');
+  };
+
+  const renderState = () => {
+    if (!state) return;
+    $('tActive').textContent = state.active;
+    $('tActiveSub').textContent = 'of ' + state.concurrency + ' channels' +
+      (state.roundRobin ? ' × queue' : '');
+    $('tWaiting').textContent = state.waiting;
+    $('tWaitingSub').textContent =
+      state.size === null ? 'unbounded' : 'max ' + state.size;
+    renderBadges();
+
+    if (state.roundRobin && state.channels) {
+      $('slots').style.display = 'none';
+      const rr = $('rr');
+      rr.style.display = 'block';
+      $('channelsTitle').textContent =
+        'Round-robin queues (' + state.channels.length + ')';
+      let html = '<table class="rr-table"><thead><tr><th>Factor</th>' +
+        '<th>Active</th><th>Waiting</th></tr></thead><tbody>';
+      for (const c of state.channels) {
+        html += '<tr><td class="num">' + c.factor + '</td><td class="num">' +
+          c.active + '</td><td class="num">' + c.waiting + '</td></tr>';
+      }
+      rr.innerHTML = html + '</tbody></table>';
+    } else {
+      $('rr').style.display = 'none';
+      $('slots').style.display = 'flex';
+      $('channelsTitle').textContent = 'Channels';
+      const n = Math.min(state.concurrency, 64);
+      const slots = $('slots');
+      slots.innerHTML = '';
+      for (let i = 0; i < n; i++) {
+        const d = document.createElement('div');
+        d.className = 'slot' + (i < state.active ? ' busy' : '');
+        d.title = i < state.active ? 'busy' : 'idle';
+        slots.appendChild(d);
+      }
+    }
+  };
+
+  const renderCounters = () => {
+    $('tSuccess').textContent = counters.success;
+    $('tFailure').textContent = counters.failure;
+    $('tTimeout').textContent = counters.timeout;
+    $('tRejected').textContent = counters.rejected;
+    $('tWait').textContent = fmtMs(avg(waits));
+    $('tExec').textContent = fmtMs(avg(execs));
+    const last5 = buckets.slice(BUCKETS - 6, BUCKETS - 1);
+    const rate = last5.reduce((s, v) => s + v, 0) / 5;
+    $('tRate').innerHTML = (Math.round(rate * 10) / 10) +
+      '<span class="sub"> /s</span>';
+  };
+
+  const W = 1000;
+  const H = 160;
+  const PAD = { l: 34, r: 8, t: 8, b: 18 };
+
+  const renderChart = () => {
+    const svg = $('chart');
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    const data = buckets.slice(0, BUCKETS - 1);
+    const max = Math.max(4, Math.ceil(Math.max(...data) / 4) * 4);
+    const iw = W - PAD.l - PAD.r;
+    const ih = H - PAD.t - PAD.b;
+    const x = (i) => PAD.l + (i / (data.length - 1)) * iw;
+    const y = (v) => PAD.t + ih - (v / max) * ih;
+    let grid = '';
+    const steps = 4;
+    for (let g = 0; g <= steps; g++) {
+      const gy = PAD.t + (g / steps) * ih;
+      const val = Math.round(max - (g / steps) * max);
+      grid += '<line x1="' + PAD.l + '" x2="' + (W - PAD.r) + '" y1="' + gy +
+        '" y2="' + gy + '" stroke="var(--grid)" stroke-width="1"/>';
+      grid += '<text x="' + (PAD.l - 6) + '" y="' + (gy + 4) +
+        '" text-anchor="end" font-size="11" fill="var(--text-muted)">' +
+        val + '</text>';
+    }
+    let line = '';
+    let area = '';
+    data.forEach((v, i) => {
+      line += (i === 0 ? 'M' : 'L') + x(i).toFixed(1) + ' ' + y(v).toFixed(1);
+    });
+    area = line + 'L' + x(data.length - 1).toFixed(1) + ' ' + (PAD.t + ih) +
+      'L' + PAD.l + ' ' + (PAD.t + ih) + 'Z';
+    const axis = '<line x1="' + PAD.l + '" x2="' + (W - PAD.r) + '" y1="' +
+      (PAD.t + ih) + '" y2="' + (PAD.t + ih) +
+      '" stroke="var(--baseline)" stroke-width="1"/>' +
+      '<text x="' + PAD.l + '" y="' + (H - 4) +
+      '" font-size="11" fill="var(--text-muted)">-60 s</text>' +
+      '<text x="' + (W - PAD.r) + '" y="' + (H - 4) +
+      '" text-anchor="end" font-size="11" fill="var(--text-muted)">now</text>';
+    svg.innerHTML = grid + axis +
+      '<path d="' + area + '" fill="var(--series-1)" opacity="0.12"/>' +
+      '<path d="' + line +
+      '" fill="none" stroke="var(--series-1)" stroke-width="2"/>' +
+      '<g id="cross" style="display:none">' +
+      '<line id="crossLine" y1="' + PAD.t + '" y2="' + (PAD.t + ih) +
+      '" stroke="var(--baseline)" stroke-width="1" stroke-dasharray="3 3"/>' +
+      '<circle id="crossDot" r="4" fill="var(--series-1)" ' +
+      'stroke="var(--surface-1)" stroke-width="2"/></g>';
+  };
+
+  const chartbox = $('chartbox');
+  chartbox.addEventListener('mousemove', (e) => {
+    const svg = $('chart');
+    const rect = svg.getBoundingClientRect();
+    const data = buckets.slice(0, BUCKETS - 1);
+    const iw = W - PAD.l - PAD.r;
+    const px = ((e.clientX - rect.left) / rect.width) * W;
+    let i = Math.round(((px - PAD.l) / iw) * (data.length - 1));
+    i = Math.max(0, Math.min(data.length - 1, i));
+    const max = Math.max(4, Math.ceil(Math.max(...data) / 4) * 4);
+    const ih = H - PAD.t - PAD.b;
+    const cx = PAD.l + (i / (data.length - 1)) * iw;
+    const cy = PAD.t + ih - (data[i] / max) * ih;
+    const cross = $('cross');
+    if (!cross) return;
+    cross.style.display = 'block';
+    $('crossLine').setAttribute('x1', cx);
+    $('crossLine').setAttribute('x2', cx);
+    $('crossDot').setAttribute('cx', cx);
+    $('crossDot').setAttribute('cy', cy);
+    const tip = $('tooltip');
+    const secsAgo = data.length - i;
+    tip.innerHTML = '<b class="num">' + data[i] + '</b> completed' +
+      '<div class="t">' + secsAgo + ' s ago</div>';
+    tip.style.display = 'block';
+    const bx = (cx / W) * rect.width;
+    tip.style.left = Math.min(rect.width - 130, Math.max(0, bx + 12)) + 'px';
+    tip.style.top = '10px';
+  });
+  chartbox.addEventListener('mouseleave', () => {
+    $('tooltip').style.display = 'none';
+    const cross = $('cross');
+    if (cross) cross.style.display = 'none';
+  });
+
+  const onMessage = (msg) => {
+    rotateBuckets();
+    switch (msg.type) {
+      case 'state':
+        state = msg.state;
+        renderState();
+        return;
+      case 'added':
+        counters.added++;
+        break;
+      case 'rejected':
+        counters.rejected++;
+        logEvent(msg, 'queue full');
+        break;
+      case 'start':
+        pushSample(waits, msg.wait);
+        break;
+      case 'executed':
+        pushSample(execs, msg.duration);
+        return;
+      case 'success':
+        counters.success++;
+        buckets[BUCKETS - 1]++;
+        logEvent(msg, msg.factor !== undefined && msg.factor !== null ?
+          'factor ' + msg.factor : '');
+        break;
+      case 'failure':
+        counters.failure++;
+        buckets[BUCKETS - 1]++;
+        logEvent(msg, msg.error);
+        break;
+      case 'timeout':
+        counters.timeout++;
+        buckets[BUCKETS - 1]++;
+        logEvent(msg, msg.error);
+        break;
+      case 'pause':
+      case 'resume':
+      case 'clear':
+        logEvent(msg, '');
+        break;
+    }
+    if (msg.state) {
+      state = msg.state;
+      renderState();
+    }
+    renderCounters();
+  };
+
+  const connect = () => {
+    const es = new EventSource('/events');
+    es.onopen = () => {
+      $('conn').classList.add('on');
+      $('connText').textContent = 'live';
+    };
+    es.onerror = () => {
+      $('conn').classList.remove('on');
+      $('connText').textContent = 'reconnecting…';
+    };
+    es.onmessage = (e) => onMessage(JSON.parse(e.data));
+  };
+
+  setInterval(() => {
+    rotateBuckets();
+    renderCounters();
+    renderChart();
+  }, 1000);
+
+  renderChart();
+  connect();
+</script>
+</body>
+</html>
