@@ -24,9 +24,16 @@ const emptyBatch = () => ({
 });
 
 const CONTROLS = new Set(['pause', 'resume', 'clear']);
+const PATCHED = ['add', 'process', 'finish', 'pause', 'resume', 'clear'];
+const GUARD_HEADER = 'x-kuyruk-monitor';
+const MONITORED = Symbol('kuyruk.monitor');
 
 const monitor = (queue, options = {}) => {
   const { port = 8228, host = '127.0.0.1', name = 'kuyruk' } = options;
+  if (queue[MONITORED]) {
+    throw new Error('Monitor is already attached to this queue');
+  }
+  queue[MONITORED] = true;
   const startedAt = Date.now();
   const clients = new Set();
   const pendingSince = new FixedQueue();
@@ -34,9 +41,11 @@ const monitor = (queue, options = {}) => {
   let batch = emptyBatch();
   let dirty = false;
   let lastStateJson = '';
+  const totals = { added: 0, success: 0, failure: 0, timeout: 0, rejected: 0 };
 
   const bump = (kind) => {
     batch.counts[kind]++;
+    totals[kind]++;
     dirty = true;
   };
 
@@ -59,7 +68,9 @@ const monitor = (queue, options = {}) => {
     const state = {
       concurrency: queue.concurrency,
       size: queue.size === Infinity ? null : queue.size,
-      active: queue.count,
+      // clear() zeroes count while in-flight tasks still decrement it
+      // on completion, so it can briefly go negative — clamp it.
+      active: Math.max(0, queue.count),
       waiting: queue.waiting.length,
       paused: queue.paused,
       fifo: queue.fifoMode,
@@ -75,7 +86,7 @@ const monitor = (queue, options = {}) => {
       for (const child of queue.waiting) {
         state.channels.push({
           factor: child.factor,
-          active: child.count,
+          active: Math.max(0, child.count),
           waiting: child.waiting.length,
         });
       }
@@ -111,7 +122,7 @@ const monitor = (queue, options = {}) => {
     const stateJson = JSON.stringify(state);
     if (!dirty && stateJson === lastStateJson) return;
     lastStateJson = stateJson;
-    broadcast({ type: 'batch', ts: Date.now(), state, ...batch });
+    broadcast({ type: 'batch', ts: Date.now(), state, totals, ...batch });
     batch = emptyBatch();
     dirty = false;
   };
@@ -169,9 +180,13 @@ const monitor = (queue, options = {}) => {
     }
   };
 
-  if (queue.onProcess) queue.onProcess = instrument(queue.onProcess);
+  let userListener = queue.onProcess || null;
+  if (userListener) queue.onProcess = instrument(userListener);
   const originalProcess = queue.process.bind(queue);
-  queue.process = (listener) => originalProcess(instrument(listener));
+  queue.process = (listener) => {
+    userListener = listener;
+    return originalProcess(instrument(listener));
+  };
 
   const originalAdd = queue.add.bind(queue);
   queue.add = (item, options) => {
@@ -226,6 +241,14 @@ const monitor = (queue, options = {}) => {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(fs.readFileSync(UI_PATH));
     } else if (req.method === 'POST' && req.url.startsWith('/api/')) {
+      // The custom header cannot be attached by a cross-site request
+      // without a CORS preflight (which this server never grants), so
+      // it shields the controls from CSRF.
+      if (req.headers[GUARD_HEADER] !== '1') {
+        res.writeHead(403);
+        res.end();
+        return;
+      }
       const action = req.url.slice('/api/'.length);
       if (!CONTROLS.has(action)) {
         res.writeHead(404);
@@ -249,6 +272,7 @@ const monitor = (queue, options = {}) => {
         ts: Date.now(),
         meta: { name, pid: process.pid, startedAt },
         state: snapshot(),
+        totals,
       });
       res.write(`data: ${hello}\n\n`);
       req.on('close', () => clients.delete(res));
@@ -266,6 +290,13 @@ const monitor = (queue, options = {}) => {
   heartbeat.unref();
 
   const url = `http://${host}:${port}`;
+  server.on('error', (err) => {
+    const reason = err.code || err.message;
+    console.error(
+      `kuyruk monitor: cannot listen on ${url} (${reason}), ` +
+        'monitoring is disabled',
+    );
+  });
   server.listen(port, host, () => {
     console.log(`kuyruk monitor: ${url}`);
   });
@@ -276,7 +307,10 @@ const monitor = (queue, options = {}) => {
     clearInterval(heartbeat);
     for (const client of clients) client.end();
     clients.clear();
-    server.close();
+    server.close(() => {});
+    for (const method of PATCHED) delete queue[method];
+    queue.onProcess = userListener;
+    delete queue[MONITORED];
   };
 
   return { url, port, host, stop };

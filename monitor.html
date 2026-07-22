@@ -506,7 +506,10 @@
 
   // ---- Controls & identity ----
   const api = (action) => {
-    fetch('/api/' + action, { method: 'POST' });
+    fetch('/api/' + action, {
+      method: 'POST',
+      headers: { 'x-kuyruk-monitor': '1' },
+    });
   };
 
   const btnPause = $('btnPause');
@@ -741,9 +744,14 @@
       state = msg.state;
       renderState();
     }
-    if (msg.type !== 'batch') return;
-    for (const kind of Object.keys(counters)) {
-      counters[kind] += msg.counts[kind] || 0;
+    if (msg.totals) {
+      for (const kind of Object.keys(counters)) {
+        counters[kind] = msg.totals[kind] || 0;
+      }
+    }
+    if (msg.type !== 'batch') {
+      renderCounters();
+      return;
     }
     const completed =
       msg.counts.success + msg.counts.failure + msg.counts.timeout;

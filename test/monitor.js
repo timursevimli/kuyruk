@@ -5,7 +5,7 @@ const { test, plan } = require('tap');
 const { Kuyruk } = require('../kuyruk.js');
 const { monitor } = require('../monitor.js');
 
-plan(9);
+plan(12);
 
 const HOST = '127.0.0.1';
 let portCounter = 8840;
@@ -25,10 +25,10 @@ const get = (port, path) =>
       .on('error', reject);
   });
 
-const post = (port, path) =>
+const post = (port, path, headers = { 'x-kuyruk-monitor': '1' }) =>
   new Promise((resolve, reject) => {
     const req = http.request(
-      { host: HOST, port, path, method: 'POST' },
+      { host: HOST, port, path, method: 'POST', headers },
       (res) => {
         res.resume();
         res.on('end', () => resolve(res.statusCode));
@@ -89,14 +89,16 @@ const collectBatches = async (client, kind, target) => {
   const waits = [];
   const execs = [];
   const events = [];
+  let last = null;
   while (totals[kind] < target) {
     const msg = await client.take((m) => m.type === 'batch');
     for (const key of Object.keys(totals)) totals[key] += msg.counts[key];
     waits.push(...msg.waits);
     execs.push(...msg.execs);
     events.push(...msg.events);
+    last = msg;
   }
-  return { totals, waits, execs, events };
+  return { totals, waits, execs, events, last };
 };
 
 test('Dashboard and unknown routes', async (t) => {
@@ -128,6 +130,13 @@ test('Hello message carries meta and initial state', async (t) => {
   t.equal(hello.state.size, 7);
   t.equal(hello.state.active, 0);
   t.equal(hello.state.paused, false);
+  t.strictSame(hello.totals, {
+    added: 0,
+    success: 0,
+    failure: 0,
+    timeout: 0,
+    rejected: 0,
+  });
 
   client.close();
   handle.stop();
@@ -148,10 +157,16 @@ test('Aggregates task lifecycle into batches', async (t) => {
   t.equal(queue.add(2), true);
   t.equal(queue.add(3), true);
 
-  const { totals, waits, execs } = await collectBatches(client, 'success', 3);
+  const { totals, waits, execs, last } = await collectBatches(
+    client,
+    'success',
+    3,
+  );
   t.equal(totals.added, 3);
   t.equal(totals.success, 3);
   t.equal(totals.failure, 0);
+  t.equal(last.totals.success, 3, 'server carries cumulative totals');
+  t.equal(last.totals.added, 3, 'cumulative totals survive batch resets');
   t.equal(execs.length, 3, 'exec duration sampled for every task');
   t.equal(waits.length, 2, 'wait sampled only for queued tasks');
   t.strictSame(results.sort(), [2, 4, 6], 'user success listener intact');
@@ -286,8 +301,67 @@ test('Control endpoints drive the queue', async (t) => {
   t.equal(await post(port, '/api/bogus'), 404);
   t.equal(await post(port, '/api/add'), 404, 'only whitelisted controls');
 
+  t.equal(
+    await post(port, '/api/pause', {}),
+    403,
+    'blocked without guard header',
+  );
+  t.equal(queue.paused, false, 'queue untouched by blocked request');
+
   client.close();
   handle.stop();
+});
+
+test('Attaching a second monitor throws', async (t) => {
+  const port = nextPort();
+  const queue = new Kuyruk({ concurrency: 1 });
+  const handle = monitor(queue, { port });
+
+  t.throws(
+    () => monitor(queue, { port: nextPort() }),
+    /already attached/,
+    'double instrumentation refused',
+  );
+
+  handle.stop();
+  const again = monitor(queue, { port: nextPort() });
+  t.ok(again, 'can re-attach after stop()');
+  again.stop();
+});
+
+test('stop() restores queue methods', async (t) => {
+  const port = nextPort();
+  const listener = (item, callback) => callback(null, item);
+  const queue = new Kuyruk({ concurrency: 1 }).process(listener);
+  const handle = monitor(queue, { port });
+
+  t.not(queue.add, Kuyruk.prototype.add, 'add is wrapped while attached');
+  t.not(queue.onProcess, listener, 'listener is wrapped while attached');
+
+  handle.stop();
+  t.equal(queue.add, Kuyruk.prototype.add, 'add restored');
+  t.equal(queue.process, Kuyruk.prototype.process, 'process restored');
+  t.equal(queue.finish, Kuyruk.prototype.finish, 'finish restored');
+  t.equal(queue.pause, Kuyruk.prototype.pause, 'pause restored');
+  t.equal(queue.resume, Kuyruk.prototype.resume, 'resume restored');
+  t.equal(queue.clear, Kuyruk.prototype.clear, 'clear restored');
+  t.equal(queue.onProcess, listener, 'user listener restored');
+});
+
+test('Occupied port does not crash the process', async (t) => {
+  const port = nextPort();
+  const first = monitor(new Kuyruk({ concurrency: 1 }), { port });
+  const second = monitor(new Kuyruk({ concurrency: 1 }), { port });
+
+  await new Promise((resolve) => {
+    setTimeout(resolve, 150);
+  });
+  const page = await get(port, '/');
+  t.equal(page.status, 200, 'first monitor keeps serving');
+  t.pass('EADDRINUSE handled without throwing');
+
+  first.stop();
+  second.stop();
 });
 
 test('stop() shuts the server down', async (t) => {

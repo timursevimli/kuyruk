@@ -130,7 +130,17 @@ Notes:
 - The server binds to `127.0.0.1` by default and never keeps your process
   alive (`unref`). Call the returned `stop()` to shut it down explicitly.
 - Wait-time measurement for data items is matched FIFO, so it is approximate
-  in LIFO/priority modes.
+  in LIFO/priority modes (and more so in round-robin mode, where all factors
+  share one timestamp queue).
+- Attach the monitor before the queue starts taking tasks — in round-robin
+  mode, child queues created earlier are invisible to it.
+- Control endpoints (`POST /api/pause|resume|clear`) require the
+  `x-kuyruk-monitor: 1` header, which shields them from cross-site requests
+  (CSRF); the dashboard sends it automatically. When binding to a
+  non-loopback host, put the monitor behind an authenticating reverse proxy.
+- Counters are kept server-side, so page reloads and SSE reconnects never
+  lose or skew them. `stop()` restores the queue's original methods; a second
+  `monitor()` call on an already-monitored queue throws.
 
 ## API
 
