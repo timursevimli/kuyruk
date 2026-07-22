@@ -5,7 +5,7 @@ const { test, plan } = require('tap');
 const { Kuyruk } = require('../kuyruk.js');
 const { monitor } = require('../monitor.js');
 
-plan(14);
+plan(15);
 
 const HOST = '127.0.0.1';
 let portCounter = 8840;
@@ -45,9 +45,14 @@ const connect = (port) =>
         messages: [],
         cursor: 0,
         waiters: [],
+        anyWaiters: [],
         buffer: '',
         close: () => req.destroy(),
       };
+      client.waitAny = () =>
+        new Promise((res2) => {
+          client.anyWaiters.push(res2);
+        });
       client.take = (match) => {
         for (; client.cursor < client.messages.length; client.cursor++) {
           const msg = client.messages[client.cursor];
@@ -77,6 +82,7 @@ const connect = (port) =>
             client.cursor = client.messages.length;
             waiter.resolve(msg);
           }
+          for (const notify of client.anyWaiters.splice(0)) notify();
         }
       });
       resolve(client);
@@ -84,19 +90,32 @@ const connect = (port) =>
     req.on('error', reject);
   });
 
-const collectBatches = async (client, kind, target) => {
+const partOf = (msg, queueName) => {
+  if (msg.type !== 'batch') return null;
+  return msg.queues.find((q) => q.name === queueName) || null;
+};
+
+// Scans the full message backlog with its own index, so two sequential
+// collects for different queues never starve each other.
+const collectBatches = async (client, queueName, kind, target) => {
   const totals = { added: 0, success: 0, failure: 0, timeout: 0, rejected: 0 };
   const waits = [];
   const execs = [];
   const events = [];
   let last = null;
+  let idx = 0;
   while (totals[kind] < target) {
-    const msg = await client.take((m) => m.type === 'batch');
-    for (const key of Object.keys(totals)) totals[key] += msg.counts[key];
-    waits.push(...msg.waits);
-    execs.push(...msg.execs);
-    events.push(...msg.events);
-    last = msg;
+    if (idx >= client.messages.length) {
+      await client.waitAny();
+      continue;
+    }
+    const part = partOf(client.messages[idx++], queueName);
+    if (!part) continue;
+    for (const key of Object.keys(totals)) totals[key] += part.counts[key];
+    waits.push(...part.waits);
+    execs.push(...part.execs);
+    events.push(...part.events);
+    last = part;
   }
   return { totals, waits, execs, events, last };
 };
@@ -126,11 +145,14 @@ test('Hello message carries meta and initial state', async (t) => {
   t.equal(hello.meta.name, 'test-queue');
   t.equal(hello.meta.pid, process.pid);
   t.type(hello.meta.startedAt, 'number');
-  t.equal(hello.state.concurrency, 3);
-  t.equal(hello.state.size, 7);
-  t.equal(hello.state.active, 0);
-  t.equal(hello.state.paused, false);
-  t.strictSame(hello.totals, {
+  t.equal(hello.queues.length, 1);
+  const q = hello.queues[0];
+  t.equal(q.name, 'test-queue');
+  t.equal(q.state.concurrency, 3);
+  t.equal(q.state.size, 7);
+  t.equal(q.state.active, 0);
+  t.equal(q.state.paused, false);
+  t.strictSame(q.totals, {
     added: 0,
     success: 0,
     failure: 0,
@@ -159,6 +181,7 @@ test('Aggregates task lifecycle into batches', async (t) => {
 
   const { totals, waits, execs, last } = await collectBatches(
     client,
+    'kuyruk',
     'success',
     3,
   );
@@ -193,7 +216,12 @@ test('Reports failures and process timeouts as events', async (t) => {
   queue.add('fail');
   queue.add('slow');
 
-  const { totals, events } = await collectBatches(client, 'timeout', 1);
+  const { totals, events } = await collectBatches(
+    client,
+    'kuyruk',
+    'timeout',
+    1,
+  );
   t.equal(totals.failure >= 1, true);
   t.equal(totals.timeout, 1);
   const failure = events.find((e) => e.type === 'failure');
@@ -220,7 +248,12 @@ test('Wait timeout surfaces as timeout event', async (t) => {
   queue.add('first');
   queue.add('starved');
 
-  const { totals, events } = await collectBatches(client, 'timeout', 1);
+  const { totals, events } = await collectBatches(
+    client,
+    'kuyruk',
+    'timeout',
+    1,
+  );
   t.equal(totals.timeout, 1);
   const timeout = events.find((e) => e.type === 'timeout');
   t.equal(timeout.detail, 'Waiting timed out');
@@ -243,7 +276,12 @@ test('Counts rejected adds when the queue is full', async (t) => {
   t.equal(queue.add('b'), true);
   t.equal(queue.add('c'), false, 'add still reports rejection');
 
-  const { totals, events } = await collectBatches(client, 'rejected', 1);
+  const { totals, events } = await collectBatches(
+    client,
+    'kuyruk',
+    'rejected',
+    1,
+  );
   t.equal(totals.added, 2);
   t.equal(totals.rejected, 1);
   const rejected = events.find((e) => e.type === 'rejected');
@@ -267,6 +305,7 @@ test('Caps events and samples per flush', async (t) => {
 
   const { totals, events, execs } = await collectBatches(
     client,
+    'kuyruk',
     'failure',
     150,
   );
@@ -274,9 +313,9 @@ test('Caps events and samples per flush', async (t) => {
   t.equal(events.length, 50, 'events capped per flush');
   t.equal(execs.length, 100, 'samples capped per flush');
 
-  const droppedMsg = client.messages.find(
-    (m) => m.type === 'batch' && m.dropped.events > 0,
-  );
+  const droppedMsg = client.messages
+    .map((m) => partOf(m, 'kuyruk'))
+    .find((p) => p && p.dropped.events > 0);
   t.equal(droppedMsg.dropped.events, 100, 'dropped events counted');
   t.equal(droppedMsg.dropped.execs, 50, 'dropped samples counted');
 
@@ -290,19 +329,23 @@ test('Control endpoints drive the queue', async (t) => {
   const handle = monitor(queue, { port });
 
   const client = await connect(port);
-  t.equal(await post(port, '/api/pause'), 204);
+  t.equal(await post(port, '/api/kuyruk/pause'), 204);
   t.equal(queue.paused, true);
-  const paused = await client.take((m) => m.state && m.state.paused === true);
+  const paused = await client.take((m) => {
+    const part = partOf(m, 'kuyruk');
+    return Boolean(part) && part.state.paused === true;
+  });
   t.ok(paused, 'paused state broadcast');
 
-  t.equal(await post(port, '/api/resume'), 204);
+  t.equal(await post(port, '/api/kuyruk/resume'), 204);
   t.equal(queue.paused, false);
 
-  t.equal(await post(port, '/api/bogus'), 404);
-  t.equal(await post(port, '/api/add'), 404, 'only whitelisted controls');
+  t.equal(await post(port, '/api/kuyruk/bogus'), 404);
+  t.equal(await post(port, '/api/kuyruk/add'), 404, 'whitelisted controls');
+  t.equal(await post(port, '/api/nope/pause'), 404, 'unknown queue name');
 
   t.equal(
-    await post(port, '/api/pause', {}),
+    await post(port, '/api/kuyruk/pause', {}),
     403,
     'blocked without guard header',
   );
@@ -379,18 +422,19 @@ test('Replays recent history to late clients', async (t) => {
   queue.add('ok');
   queue.add('bad');
   queue.add('ok');
-  await collectBatches(witness, 'success', 2);
+  await collectBatches(witness, 'kuyruk', 'success', 2);
   witness.close();
 
   const late = await connect(port);
   const hello = await late.take((m) => m.type === 'hello');
-  const failure = hello.history.events.find((e) => e.type === 'failure');
+  const history = hello.queues[0].history;
+  const failure = history.events.find((e) => e.type === 'failure');
   t.equal(failure.detail, 'history boom', 'failure replayed');
-  const successes = hello.history.events
+  const successes = history.events
     .filter((e) => e.type === 'success')
     .reduce((sum, e) => sum + e.count, 0);
   t.equal(successes, 2, 'success groups replayed with counts');
-  const completed = hello.history.buckets.values.reduce((s, v) => s + v, 0);
+  const completed = history.buckets.values.reduce((s, v) => s + v, 0);
   t.equal(completed, 3, 'throughput buckets replayed');
 
   late.close();
@@ -411,9 +455,10 @@ test('History is capped and details truncated', async (t) => {
 
   const client = await connect(port);
   const hello = await client.take((m) => m.type === 'hello');
-  t.equal(hello.history.events.length, 10, 'ring buffer never grows past cap');
+  const history = hello.queues[0].history;
+  t.equal(history.events.length, 10, 'ring buffer never grows past cap');
   t.equal(
-    hello.history.events[0].detail.length,
+    history.events[0].detail.length,
     200,
     'details truncated to 200 chars',
   );
@@ -427,7 +472,11 @@ test('History is capped and details truncated', async (t) => {
   });
   const client2 = await connect(bare);
   const hello2 = await client2.take((m) => m.type === 'hello');
-  t.strictSame(hello2.history.events, [], 'history: 0 disables replay');
+  t.strictSame(
+    hello2.queues[0].history.events,
+    [],
+    'history: 0 disables replay',
+  );
   client2.close();
   off.stop();
 });
@@ -442,4 +491,56 @@ test('stop() shuts the server down', async (t) => {
 
   handle.stop();
   await t.rejects(get(port, '/'), 'connections refused after stop');
+});
+
+test('Watches multiple queues on one port', async (t) => {
+  const port = nextPort();
+  const fast = new Kuyruk({ concurrency: 5 })
+    .process((item, callback) => {
+      setTimeout(callback, 5, null, item);
+    })
+    .success(() => {});
+  const slow = new Kuyruk({ concurrency: 1 })
+    .process((item, callback) => {
+      setTimeout(callback, 30, new Error('slow boom'));
+    })
+    .failure(() => {});
+
+  const handle = monitor({ port });
+  handle.watch(fast, 'fast').watch(slow, 'slow');
+
+  t.throws(
+    () => handle.watch(new Kuyruk({ concurrency: 1 }), 'fast'),
+    /already watched/,
+    'name collision refused',
+  );
+
+  const client = await connect(port);
+  const hello = await client.take((m) => m.type === 'hello');
+  t.strictSame(
+    hello.queues.map((q) => q.name).sort(),
+    ['fast', 'slow'],
+    'both queues in hello',
+  );
+
+  for (let i = 0; i < 3; i++) fast.add(i);
+  slow.add('x');
+
+  const fastSeen = await collectBatches(client, 'fast', 'success', 3);
+  t.equal(fastSeen.totals.success, 3, 'fast counted separately');
+  const slowSeen = await collectBatches(client, 'slow', 'failure', 1);
+  t.equal(slowSeen.totals.failure, 1, 'slow counted separately');
+
+  t.equal(await post(port, '/api/slow/pause'), 204);
+  t.equal(slow.paused, true, 'control targets the named queue');
+  t.equal(fast.paused, false, 'other queue untouched');
+  await post(port, '/api/slow/resume');
+
+  const third = new Kuyruk({ concurrency: 1 });
+  handle.watch(third, 'third');
+  const watched = await client.take((m) => m.type === 'watched');
+  t.equal(watched.queue.name, 'third', 'late watch announced to clients');
+
+  client.close();
+  handle.stop();
 });

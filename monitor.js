@@ -31,22 +31,7 @@ const PATCHED = ['add', 'process', 'finish', 'pause', 'resume', 'clear'];
 const GUARD_HEADER = 'x-kuyruk-monitor';
 const MONITORED = Symbol('kuyruk.monitor');
 
-const monitor = (queue, options = {}) => {
-  const { port = 8228, host = '127.0.0.1', name = 'kuyruk' } = options;
-  let { history = 200 } = options;
-  if (history > MAX_HISTORY) {
-    console.error(
-      `kuyruk monitor: history ${history} clamped to ${MAX_HISTORY}`,
-    );
-    history = MAX_HISTORY;
-  }
-  if (history < 0) history = 0;
-  if (queue[MONITORED]) {
-    throw new Error('Monitor is already attached to this queue');
-  }
-  queue[MONITORED] = true;
-  const startedAt = Date.now();
-  const clients = new Set();
+const createWatcher = (queue, name, historySize) => {
   const pendingSince = new FixedQueue();
   let startedBeforeEnqueue = 0;
   let batch = emptyBatch();
@@ -66,9 +51,9 @@ const monitor = (queue, options = {}) => {
   // Ring buffer: eviction on every insert keeps memory constant no
   // matter how long the queue runs.
   const remember = (entry) => {
-    if (history === 0) return;
+    if (historySize === 0) return;
     historyBuf.push(entry);
-    while (historyBuf.length > history) historyBuf.shift();
+    while (historyBuf.length > historySize) historyBuf.shift();
   };
 
   const rotateSecBuckets = () => {
@@ -138,46 +123,6 @@ const monitor = (queue, options = {}) => {
       state.waiting = state.channels.reduce((sum, c) => sum + c.waiting, 0);
     }
     return state;
-  };
-
-  const write = (client, payload) => {
-    if (client.writableLength > MAX_CLIENT_BUFFER) {
-      clients.delete(client);
-      client.destroy();
-      return;
-    }
-    client.write(payload);
-  };
-
-  const broadcast = (message) => {
-    const payload = `data: ${JSON.stringify(message)}\n\n`;
-    for (const client of clients) write(client, payload);
-  };
-
-  const flush = () => {
-    // Success groups land in history even when nobody is watching, so a
-    // late client sees the same log a live one would have.
-    if (batch.counts.success > 0) {
-      remember({
-        type: 'success',
-        ts: Date.now(),
-        count: batch.counts.success,
-      });
-    }
-    if (clients.size === 0) {
-      if (dirty) {
-        batch = emptyBatch();
-        dirty = false;
-      }
-      return;
-    }
-    const state = snapshot();
-    const stateJson = JSON.stringify(state);
-    if (!dirty && stateJson === lastStateJson) return;
-    lastStateJson = stateJson;
-    broadcast({ type: 'batch', ts: Date.now(), state, totals, ...batch });
-    batch = emptyBatch();
-    dirty = false;
   };
 
   const measureOnce = (started) => {
@@ -290,6 +235,111 @@ const monitor = (queue, options = {}) => {
     };
   }
 
+  const queuePayload = () => {
+    rotateSecBuckets();
+    return {
+      name,
+      state: snapshot(),
+      totals,
+      history: {
+        events: [...historyBuf],
+        buckets: { base: secBase, values: secBuckets },
+      },
+    };
+  };
+
+  // Success groups land in history even when nobody is watching, so a
+  // late client sees the same log a live one would have.
+  const rememberSuccesses = () => {
+    if (batch.counts.success === 0) return;
+    remember({ type: 'success', ts: Date.now(), count: batch.counts.success });
+  };
+
+  const takeBatch = () => {
+    const state = snapshot();
+    const stateJson = JSON.stringify(state);
+    if (!dirty && stateJson === lastStateJson) return null;
+    lastStateJson = stateJson;
+    const payload = { name, state, totals, ...batch };
+    batch = emptyBatch();
+    dirty = false;
+    return payload;
+  };
+
+  const resetBatch = () => {
+    if (!dirty) return;
+    batch = emptyBatch();
+    dirty = false;
+  };
+
+  const control = (action) => queue[action]();
+
+  const detach = () => {
+    for (const method of PATCHED) delete queue[method];
+    queue.onProcess = userListener;
+    delete queue[MONITORED];
+  };
+
+  return {
+    name,
+    queuePayload,
+    rememberSuccesses,
+    takeBatch,
+    resetBatch,
+    control,
+    detach,
+  };
+};
+
+const monitor = (queueOrOptions, maybeOptions) => {
+  const isQueue =
+    Boolean(queueOrOptions) &&
+    typeof queueOrOptions.add === 'function' &&
+    typeof queueOrOptions.process === 'function';
+  const options = (isQueue ? maybeOptions : queueOrOptions) || {};
+  const { port = 8228, host = '127.0.0.1', name = 'kuyruk' } = options;
+  let { history = 200 } = options;
+  if (history > MAX_HISTORY) {
+    console.error(
+      `kuyruk monitor: history ${history} clamped to ${MAX_HISTORY}`,
+    );
+    history = MAX_HISTORY;
+  }
+  if (history < 0) history = 0;
+
+  const startedAt = Date.now();
+  const clients = new Set();
+  const watchers = new Map();
+
+  const write = (client, payload) => {
+    if (client.writableLength > MAX_CLIENT_BUFFER) {
+      clients.delete(client);
+      client.destroy();
+      return;
+    }
+    client.write(payload);
+  };
+
+  const broadcast = (message) => {
+    const payload = `data: ${JSON.stringify(message)}\n\n`;
+    for (const client of clients) write(client, payload);
+  };
+
+  const flush = () => {
+    for (const watcher of watchers.values()) watcher.rememberSuccesses();
+    if (clients.size === 0) {
+      for (const watcher of watchers.values()) watcher.resetBatch();
+      return;
+    }
+    const queues = [];
+    for (const watcher of watchers.values()) {
+      const payload = watcher.takeBatch();
+      if (payload) queues.push(payload);
+    }
+    if (queues.length === 0) return;
+    broadcast({ type: 'batch', ts: Date.now(), queues });
+  };
+
   const server = http.createServer((req, res) => {
     if (req.url === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -303,13 +353,16 @@ const monitor = (queue, options = {}) => {
         res.end();
         return;
       }
-      const action = req.url.slice('/api/'.length);
-      if (!CONTROLS.has(action)) {
+      const parts = req.url.slice('/api/'.length).split('/');
+      const queueName = decodeURIComponent(parts[0] || '');
+      const action = parts[1] || '';
+      const watcher = watchers.get(queueName);
+      if (!watcher || !CONTROLS.has(action)) {
         res.writeHead(404);
         res.end();
         return;
       }
-      queue[action]();
+      watcher.control(action);
       flush();
       res.writeHead(204);
       res.end();
@@ -321,17 +374,11 @@ const monitor = (queue, options = {}) => {
         'X-Accel-Buffering': 'no',
       });
       clients.add(res);
-      rotateSecBuckets();
       const hello = JSON.stringify({
         type: 'hello',
         ts: Date.now(),
         meta: { name, pid: process.pid, startedAt },
-        state: snapshot(),
-        totals,
-        history: {
-          events: [...historyBuf],
-          buckets: { base: secBase, values: secBuckets },
-        },
+        queues: [...watchers.values()].map((w) => w.queuePayload()),
       });
       res.write(`data: ${hello}\n\n`);
       req.on('close', () => clients.delete(res));
@@ -361,18 +408,43 @@ const monitor = (queue, options = {}) => {
   });
   server.unref();
 
-  const stop = () => {
-    clearInterval(flusher);
-    clearInterval(heartbeat);
-    for (const client of clients) client.end();
-    clients.clear();
-    server.close(() => {});
-    for (const method of PATCHED) delete queue[method];
-    queue.onProcess = userListener;
-    delete queue[MONITORED];
+  const handle = {
+    url,
+    port,
+    host,
+    watch: (queue, queueName) => {
+      const label = queueName || `queue-${watchers.size + 1}`;
+      if (watchers.has(label)) {
+        throw new Error(`Queue name "${label}" is already watched`);
+      }
+      if (queue[MONITORED]) {
+        throw new Error('Monitor is already attached to this queue');
+      }
+      queue[MONITORED] = true;
+      const watcher = createWatcher(queue, label, history);
+      watchers.set(label, watcher);
+      if (clients.size > 0) {
+        broadcast({
+          type: 'watched',
+          ts: Date.now(),
+          queue: watcher.queuePayload(),
+        });
+      }
+      return handle;
+    },
+    stop: () => {
+      clearInterval(flusher);
+      clearInterval(heartbeat);
+      for (const client of clients) client.end();
+      clients.clear();
+      server.close(() => {});
+      for (const watcher of watchers.values()) watcher.detach();
+      watchers.clear();
+    },
   };
 
-  return { url, port, host, stop };
+  if (isQueue) handle.watch(queueOrOptions, options.name || 'kuyruk');
+  return handle;
 };
 
 module.exports = { monitor };

@@ -22,6 +22,8 @@
     --status-serious: #ec835a;
     --status-critical: #d03b3b;
     --good-text: #006300;
+    --row-hover: rgba(11, 11, 11, 0.03);
+    --row-selected: rgba(42, 120, 214, 0.08);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -36,6 +38,8 @@
       --border: rgba(255, 255, 255, 0.1);
       --series-1: #3987e5;
       --good-text: #0ca30c;
+      --row-hover: rgba(255, 255, 255, 0.04);
+      --row-selected: rgba(57, 135, 229, 0.14);
     }
   }
   * { box-sizing: border-box; }
@@ -100,6 +104,14 @@
     color: var(--status-serious);
     border-color: var(--status-serious);
     font-weight: 600;
+  }
+  .qchip {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--series-1);
+    color: var(--series-1);
   }
   .tiles {
     display: grid;
@@ -181,7 +193,8 @@
     background: transparent;
   }
   .slot.busy { background: var(--series-1); border-color: var(--series-1); }
-  .rr-table td, .rr-table th, .log-table td, .log-table th {
+  .rr-table td, .rr-table th, .log-table td, .log-table th,
+  .ov-table td, .ov-table th {
     padding: 4px 10px 4px 0;
     text-align: left;
     font-size: 12.5px;
@@ -195,6 +208,10 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
+  .ov-table tbody tr { cursor: pointer; }
+  .ov-table tbody tr:hover { background: var(--row-hover); }
+  .ov-table tbody tr.sel { background: var(--row-selected); }
+  .ov-table .qname { font-weight: 600; }
   .num { font-variant-numeric: tabular-nums; }
   #chartbox { position: relative; }
   #chart { width: 100%; height: 160px; display: block; }
@@ -227,6 +244,7 @@
   .muted { color: var(--text-muted); }
   .filter-problems tr.row-ok { display: none; }
   .spark { width: 100%; height: 26px; margin-top: 6px; display: block; }
+  .ovspark { width: 90px; height: 20px; display: block; }
 </style>
 </head>
 <body>
@@ -236,12 +254,23 @@
     <span class="conn" id="conn"><span class="dot"></span>
       <span id="connText">connecting…</span></span>
     <span class="identity num" id="identity"></span>
+    <span class="qchip" id="qchip" style="display: none"></span>
     <div class="controls">
       <button class="btn" id="btnPause">⏸ Pause</button>
       <button class="btn" id="btnClear">⌫ Clear</button>
     </div>
     <div class="badges" id="badges"></div>
   </header>
+
+  <div class="card" id="overviewCard" style="display: none">
+    <h2>Queues</h2>
+    <table class="ov-table">
+      <thead><tr><th>Queue</th><th>Active</th><th>Waiting</th>
+        <th>Rate/s</th><th>Failed</th><th>Timed out</th><th></th>
+        <th>Last 60 s</th></tr></thead>
+      <tbody id="overview"></tbody>
+    </table>
+  </div>
 
   <div class="tiles">
     <div class="tile">
@@ -299,7 +328,7 @@
   </div>
 
   <div class="card">
-    <h2>Completed tasks per second — last 60 s</h2>
+    <h2 id="chartTitle">Completed tasks per second — last 60 s</h2>
     <div id="chartbox">
       <svg id="chart"></svg>
       <div id="tooltip"></div>
@@ -317,7 +346,8 @@
     </div>
     <div class="log-wrap" id="logWrap">
       <table class="log-table">
-        <thead><tr><th>Time</th><th>Event</th><th>Detail</th></tr></thead>
+        <thead><tr><th>Time</th><th>Queue</th><th>Event</th>
+          <th>Detail</th></tr></thead>
         <tbody id="log"></tbody>
       </table>
     </div>
@@ -331,25 +361,32 @@
   const MAX_LOG_ROWS = 200;
   const SAMPLE_WINDOW = 500;
   const BUCKETS = 60;
+  const ZERO = { added: 0, success: 0, failure: 0, timeout: 0, rejected: 0 };
 
-  const counters = {
-    success: 0, failure: 0, timeout: 0, rejected: 0, added: 0,
-  };
-  const waits = [];
-  const execs = [];
-  const buckets = new Array(BUCKETS).fill(0);
-  let bucketBase = Math.floor(Date.now() / 1000);
-  let state = null;
+  const queues = {};
+  let selected = null;
   let meta = null;
+  let bucketBase = Math.floor(Date.now() / 1000);
   let logTotal = 0;
+
+  const newQueue = (name) => ({
+    name,
+    state: null,
+    totals: { ...ZERO },
+    waits: [],
+    execs: [],
+    buckets: new Array(BUCKETS).fill(0),
+  });
 
   const rotateBuckets = () => {
     const now = Math.floor(Date.now() / 1000);
     let shift = now - bucketBase;
     if (shift <= 0) return;
     if (shift > BUCKETS) shift = BUCKETS;
-    buckets.splice(0, shift);
-    for (let i = 0; i < shift; i++) buckets.push(0);
+    for (const q of Object.values(queues)) {
+      q.buckets.splice(0, shift);
+      for (let i = 0; i < shift; i++) q.buckets.push(0);
+    }
     bucketBase = now;
   };
 
@@ -366,6 +403,11 @@
       Math.floor((p / 100) * sorted.length),
     );
     return sorted[idx];
+  };
+
+  const rateOf = (q) => {
+    const last5 = q.buckets.slice(BUCKETS - 6, BUCKETS - 1);
+    return last5.reduce((s, v) => s + v, 0) / 5;
   };
 
   const fmtMs = (v) => {
@@ -393,14 +435,13 @@
     pause: { cls: 'ev-neutral', ic: '⏸', label: 'pause', ok: false },
     resume: { cls: 'ev-neutral', ic: '⏵', label: 'resume', ok: false },
     clear: { cls: 'ev-neutral', ic: '⌫', label: 'clear', ok: false },
-    dropped: { cls: 'ev-neutral', ic: '…', label: 'dropped', ok: true },
   };
 
   // ---- Event log: grouped successes, hover pause, filters ----
   const log = $('log');
-  let successGroup = null; // { tr, count, firstTs } when top row groups ✓
+  let successGroup = null; // { tr, count, queue } when top row groups ✓
   let logHover = false;
-  const pendingBatches = [];
+  const pendingParts = [];
   let droppedWhileHover = 0;
 
   const trimLog = () => {
@@ -411,73 +452,82 @@
     }
   };
 
-  const makeRow = (cls, html, okRow) => {
+  const makeRow = (okRow, html) => {
     const tr = document.createElement('tr');
     if (okRow) tr.className = 'row-ok';
     tr.innerHTML = html;
     return tr;
   };
 
-  const addEventRow = (ev) => {
-    const meta = EV_META[ev.type];
-    if (!meta) return;
-    const detail = ev.detail || '';
+  const addEventRow = (queueName, ev) => {
+    const meta2 = EV_META[ev.type];
+    if (!meta2) return;
     const factor = ev.factor !== undefined && ev.factor !== null ?
       ' (factor ' + ev.factor + ')' : '';
-    const tr = makeRow(meta.cls,
+    const tr = makeRow(meta2.ok,
       '<td class="num muted">' + fmtTime(ev.ts) + '</td>' +
-      '<td><span class="ev ' + meta.cls + '"><span class="ic">' +
-      meta.ic + '</span>' + meta.label + '</span></td>' +
-      '<td class="muted"></td>', meta.ok);
-    tr.lastChild.textContent = detail + factor;
+      '<td class="muted"></td>' +
+      '<td><span class="ev ' + meta2.cls + '"><span class="ic">' +
+      meta2.ic + '</span>' + meta2.label + '</span></td>' +
+      '<td class="muted"></td>');
+    tr.cells[1].textContent = queueName;
+    tr.cells[3].textContent = (ev.detail || '') + factor;
     log.prepend(tr);
     successGroup = null;
     logTotal++;
   };
 
-  const addSuccesses = (count, ts) => {
+  const addSuccesses = (queueName, count, ts) => {
     if (count <= 0) return;
     logTotal += count;
-    if (successGroup && log.firstChild === successGroup.tr) {
+    if (
+      successGroup &&
+      log.firstChild === successGroup.tr &&
+      successGroup.queue === queueName
+    ) {
       successGroup.count += count;
       successGroup.tr.cells[0].textContent = fmtTime(ts);
-      successGroup.tr.cells[1].firstChild.lastChild.textContent =
+      successGroup.tr.cells[2].firstChild.lastChild.textContent =
         'success ×' + successGroup.count;
       return;
     }
-    const tr = makeRow('ev-success',
+    const tr = makeRow(true,
       '<td class="num muted">' + fmtTime(ts) + '</td>' +
+      '<td class="muted"></td>' +
       '<td><span class="ev ev-success"><span class="ic">✓</span>' +
       '<span>success' + (count > 1 ? ' ×' + count : '') + '</span>' +
-      '</span></td><td class="muted"></td>', true);
+      '</span></td><td class="muted"></td>');
+    tr.cells[1].textContent = queueName;
     log.prepend(tr);
-    successGroup = { tr, count };
+    successGroup = { tr, count, queue: queueName };
   };
 
-  const addDroppedRow = (n, what, ts) => {
+  const addDroppedRow = (queueName, n, what, ts) => {
     if (n <= 0) return;
-    const tr = makeRow('ev-neutral',
+    const tr = makeRow(true,
       '<td class="num muted">' + fmtTime(ts) + '</td>' +
+      '<td class="muted"></td>' +
       '<td><span class="ev ev-neutral"><span class="ic">…</span>' +
       'dropped</span></td>' +
-      '<td class="muted">' + n + ' ' + what + ' not shown</td>', true);
+      '<td class="muted">' + n + ' ' + what + ' not shown</td>');
+    tr.cells[1].textContent = queueName;
     log.prepend(tr);
     successGroup = null;
   };
 
-  const renderLogBatch = (msg) => {
-    addSuccesses(msg.counts.success, msg.ts);
-    for (const ev of msg.events) addEventRow(ev);
-    addDroppedRow(msg.dropped.events, 'events', msg.ts);
+  const renderLogPart = (part, ts) => {
+    addSuccesses(part.name, part.counts.success, ts);
+    for (const ev of part.events) addEventRow(part.name, ev);
+    addDroppedRow(part.name, part.dropped.events, 'events', ts);
     trimLog();
     $('logCount').textContent = '(' + logTotal + ' total)';
   };
 
-  const flushPending = () => {
-    for (const m of pendingBatches) renderLogBatch(m);
-    pendingBatches.length = 0;
+  const flushPendingLog = () => {
+    for (const { part, ts } of pendingParts) renderLogPart(part, ts);
+    pendingParts.length = 0;
     if (droppedWhileHover > 0) {
-      addDroppedRow(droppedWhileHover, 'batches (paused)', Date.now());
+      addDroppedRow('—', droppedWhileHover, 'batches (paused)', Date.now());
       droppedWhileHover = 0;
     }
   };
@@ -490,7 +540,7 @@
   logWrap.addEventListener('mouseleave', () => {
     logHover = false;
     $('logCard').classList.remove('log-paused');
-    flushPending();
+    flushPendingLog();
   });
 
   $('chipAll').addEventListener('click', () => {
@@ -506,7 +556,8 @@
 
   // ---- Controls & identity ----
   const api = (action) => {
-    fetch('/api/' + action, {
+    if (!selected) return;
+    fetch('/api/' + encodeURIComponent(selected) + '/' + action, {
       method: 'POST',
       headers: { 'x-kuyruk-monitor': '1' },
     });
@@ -514,7 +565,8 @@
 
   const btnPause = $('btnPause');
   btnPause.addEventListener('click', () => {
-    api(state && state.paused ? 'resume' : 'pause');
+    const q = queues[selected];
+    api(q && q.state && q.state.paused ? 'resume' : 'pause');
   });
 
   const btnClear = $('btnClear');
@@ -543,47 +595,94 @@
       ' · up ' + fmtUptime(Date.now() - meta.startedAt);
   };
 
-  // ---- Gauges & tiles ----
-  const renderBadges = () => {
-    if (!state) return;
+  // ---- Overview ----
+  const renderOverview = () => {
+    const names = Object.keys(queues);
+    const card = $('overviewCard');
+    if (names.length < 2) {
+      card.style.display = 'none';
+      $('qchip').style.display = 'none';
+      return;
+    }
+    card.style.display = 'block';
+    $('qchip').style.display = 'inline-block';
+    $('qchip').textContent = '▣ ' + selected;
+    const body = $('overview');
+    body.innerHTML = '';
+    for (const name of names) {
+      const q = queues[name];
+      const s = q.state;
+      const tr = document.createElement('tr');
+      if (name === selected) tr.className = 'sel';
+      const paused = s && s.paused ? ' ⏸' : '';
+      tr.innerHTML =
+        '<td class="qname"></td>' +
+        '<td class="num">' + (s ? s.active + '/' + s.concurrency : '—') +
+        '</td>' +
+        '<td class="num">' + (s ? s.waiting : '—') + '</td>' +
+        '<td class="num">' + (Math.round(rateOf(q) * 10) / 10) + '</td>' +
+        '<td class="num" style="color: var(--status-critical)">' +
+        q.totals.failure + '</td>' +
+        '<td class="num" style="color: var(--status-serious)">' +
+        q.totals.timeout + '</td>' +
+        '<td class="muted">' + paused + '</td>' +
+        '<td><svg class="ovspark" id="ovspark-' + names.indexOf(name) +
+        '"></svg></td>';
+      tr.cells[0].textContent = name;
+      tr.addEventListener('click', () => {
+        selected = name;
+        renderAll();
+      });
+      body.appendChild(tr);
+      renderSparkInto(
+        tr.cells[7].firstChild,
+        q.buckets.slice(0, BUCKETS - 1),
+        true,
+      );
+    }
+  };
+
+  // ---- Gauges & tiles (selected queue) ----
+  const renderBadges = (s) => {
     const b = [];
-    if (state.paused) b.push('<span class="badge paused">⏸ paused</span>');
-    b.push('<span class="badge">' + (state.fifo ? 'FIFO' : 'LIFO') +
-      '</span>');
-    if (state.priority) b.push('<span class="badge">priority</span>');
-    if (state.roundRobin) b.push('<span class="badge">round-robin</span>');
-    if (state.debounce) b.push('<span class="badge">debounce</span>');
-    if (state.processTimeout !== null) {
-      b.push('<span class="badge">exec timeout ' + state.processTimeout +
+    if (s.paused) b.push('<span class="badge paused">⏸ paused</span>');
+    b.push('<span class="badge">' + (s.fifo ? 'FIFO' : 'LIFO') + '</span>');
+    if (s.priority) b.push('<span class="badge">priority</span>');
+    if (s.roundRobin) b.push('<span class="badge">round-robin</span>');
+    if (s.debounce) b.push('<span class="badge">debounce</span>');
+    if (s.processTimeout !== null) {
+      b.push('<span class="badge">exec timeout ' + s.processTimeout +
         ' ms</span>');
     }
-    if (state.waitTimeout !== null) {
-      b.push('<span class="badge">wait timeout ' + state.waitTimeout +
+    if (s.waitTimeout !== null) {
+      b.push('<span class="badge">wait timeout ' + s.waitTimeout +
         ' ms</span>');
     }
     $('badges').innerHTML = b.join('');
   };
 
   const renderState = () => {
-    if (!state) return;
-    $('tActive').textContent = state.active;
-    $('tActiveSub').textContent = 'of ' + state.concurrency + ' channels' +
-      (state.roundRobin ? ' × queue' : '');
-    $('tWaiting').textContent = state.waiting;
+    const q = queues[selected];
+    if (!q || !q.state) return;
+    const s = q.state;
+    $('tActive').textContent = s.active;
+    $('tActiveSub').textContent = 'of ' + s.concurrency + ' channels' +
+      (s.roundRobin ? ' × queue' : '');
+    $('tWaiting').textContent = s.waiting;
     $('tWaitingSub').textContent =
-      state.size === null ? 'unbounded' : 'max ' + state.size;
-    renderBadges();
-    btnPause.textContent = state.paused ? '⏵ Resume' : '⏸ Pause';
+      s.size === null ? 'unbounded' : 'max ' + s.size;
+    renderBadges(s);
+    btnPause.textContent = s.paused ? '⏵ Resume' : '⏸ Pause';
 
-    if (state.roundRobin && state.channels) {
+    if (s.roundRobin && s.channels) {
       $('slots').style.display = 'none';
       const rr = $('rr');
       rr.style.display = 'block';
       $('channelsTitle').textContent =
-        'Round-robin queues (' + state.channels.length + ')';
+        'Round-robin queues (' + s.channels.length + ') — ' + selected;
       let html = '<table class="rr-table"><thead><tr><th>Factor</th>' +
         '<th>Active</th><th>Waiting</th></tr></thead><tbody>';
-      for (const c of state.channels) {
+      for (const c of s.channels) {
         html += '<tr><td class="num">' + c.factor + '</td><td class="num">' +
           c.active + '</td><td class="num">' + c.waiting + '</td></tr>';
       }
@@ -591,28 +690,26 @@
     } else {
       $('rr').style.display = 'none';
       $('slots').style.display = 'flex';
-      $('channelsTitle').textContent = 'Channels';
-      const n = Math.min(state.concurrency, 64);
+      $('channelsTitle').textContent = 'Channels — ' + selected;
+      const n = Math.min(s.concurrency, 64);
       const slots = $('slots');
       slots.innerHTML = '';
       for (let i = 0; i < n; i++) {
         const d = document.createElement('div');
-        d.className = 'slot' + (i < state.active ? ' busy' : '');
-        d.title = i < state.active ? 'busy' : 'idle';
+        d.className = 'slot' + (i < s.active ? ' busy' : '');
+        d.title = i < s.active ? 'busy' : 'idle';
         slots.appendChild(d);
       }
     }
   };
 
-  const renderSpark = (id, arr) => {
-    const svg = $(id);
-    const data = arr.slice(-60);
+  const renderSparkInto = (svg, data, fromZero) => {
     if (data.length < 2) {
       svg.innerHTML = '';
       return;
     }
     const w = 100;
-    const h = 26;
+    const h = fromZero ? 20 : 26;
     svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
     svg.setAttribute('preserveAspectRatio', 'none');
     const max = Math.max(...data, 1);
@@ -627,37 +724,49 @@
       'vector-effect="non-scaling-stroke"/>';
   };
 
+  const renderSpark = (id, arr) => {
+    renderSparkInto($(id), arr.slice(-60), false);
+  };
+
   const renderCounters = () => {
-    $('tSuccess').textContent = counters.success;
-    $('tFailure').textContent = counters.failure;
-    $('tTimeout').textContent = counters.timeout;
-    $('tRejected').textContent = counters.rejected;
-    $('tWait').textContent = fmtMs(percentile(waits, 50));
+    const q = queues[selected];
+    if (!q) return;
+    $('tSuccess').textContent = q.totals.success;
+    $('tFailure').textContent = q.totals.failure;
+    $('tTimeout').textContent = q.totals.timeout;
+    $('tRejected').textContent = q.totals.rejected;
+    $('tWait').textContent = fmtMs(percentile(q.waits, 50));
     $('tWaitSub').textContent =
-      'p95 ' + fmtMs(percentile(waits, 95)) + ' · time in queue';
-    $('tExec').textContent = fmtMs(percentile(execs, 50));
+      'p95 ' + fmtMs(percentile(q.waits, 95)) + ' · time in queue';
+    $('tExec').textContent = fmtMs(percentile(q.execs, 50));
     $('tExecSub').textContent =
-      'p95 ' + fmtMs(percentile(execs, 95)) + ' · processing time';
-    renderSpark('sparkWait', waits);
-    renderSpark('sparkExec', execs);
-    const last5 = buckets.slice(BUCKETS - 6, BUCKETS - 1);
-    const rate = last5.reduce((s, v) => s + v, 0) / 5;
-    $('tRate').innerHTML = (Math.round(rate * 10) / 10) +
+      'p95 ' + fmtMs(percentile(q.execs, 95)) + ' · processing time';
+    renderSpark('sparkWait', q.waits);
+    renderSpark('sparkExec', q.execs);
+    $('tRate').innerHTML = (Math.round(rateOf(q) * 10) / 10) +
       '<span class="sub"> /s</span>';
   };
 
-  // ---- Throughput chart ----
+  // ---- Throughput chart (selected queue) ----
   const H = 160;
   const PAD = { l: 34, r: 8, t: 8, b: 18 };
   const chartW = () => Math.max(320, $('chart').clientWidth || 1000);
   const chartMax = (data) =>
     Math.max(4, Math.ceil(Math.max(...data) / 4) * 4);
+  const chartData = () => {
+    const q = queues[selected];
+    return q ? q.buckets.slice(0, BUCKETS - 1) :
+      new Array(BUCKETS - 1).fill(0);
+  };
 
   const renderChart = () => {
     const svg = $('chart');
     const W = chartW();
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
-    const data = buckets.slice(0, BUCKETS - 1);
+    $('chartTitle').textContent =
+      'Completed tasks per second — last 60 s' +
+      (selected ? ' — ' + selected : '');
+    const data = chartData();
     const max = chartMax(data);
     const iw = W - PAD.l - PAD.r;
     const ih = H - PAD.t - PAD.b;
@@ -703,7 +812,7 @@
     const svg = $('chart');
     const rect = svg.getBoundingClientRect();
     const W = chartW();
-    const data = buckets.slice(0, BUCKETS - 1);
+    const data = chartData();
     const iw = W - PAD.l - PAD.r;
     const px = e.clientX - rect.left;
     let i = Math.round(((px - PAD.l) / iw) * (data.length - 1));
@@ -733,34 +842,58 @@
     if (cross) cross.style.display = 'none';
   });
 
+  const renderAll = () => {
+    renderOverview();
+    renderState();
+    renderCounters();
+    renderChart();
+    renderIdentity();
+  };
+
   // ---- History replay & session reset ----
   const resetSession = () => {
+    for (const name of Object.keys(queues)) delete queues[name];
+    selected = null;
     log.innerHTML = '';
     logTotal = 0;
     successGroup = null;
-    pendingBatches.length = 0;
+    pendingParts.length = 0;
     droppedWhileHover = 0;
-    waits.length = 0;
-    execs.length = 0;
-    buckets.fill(0);
   };
 
-  const replayLog = (entries) => {
-    for (const entry of entries) {
-      if (entry.type === 'success') addSuccesses(entry.count, entry.ts);
-      else addEventRow(entry);
-    }
-    trimLog();
-    $('logCount').textContent = '(' + logTotal + ' total)';
-  };
-
-  const syncBuckets = (server) => {
+  const syncBuckets = (q, server) => {
     rotateBuckets();
     const offset = bucketBase - server.base;
     for (let i = 0; i < BUCKETS; i++) {
       const j = i + offset;
-      buckets[i] = j >= 0 && j < server.values.length ? server.values[j] : 0;
+      q.buckets[i] =
+        j >= 0 && j < server.values.length ? server.values[j] : 0;
     }
+  };
+
+  const upsertQueue = (payload, replay) => {
+    let q = queues[payload.name];
+    if (!q) {
+      q = newQueue(payload.name);
+      queues[payload.name] = q;
+    }
+    q.state = payload.state;
+    q.totals = payload.totals;
+    if (payload.history) {
+      syncBuckets(q, payload.history.buckets);
+      if (replay) {
+        for (const entry of payload.history.events) {
+          if (entry.type === 'success') {
+            addSuccesses(payload.name, entry.count, entry.ts);
+          } else {
+            addEventRow(payload.name, entry);
+          }
+        }
+        trimLog();
+        $('logCount').textContent = '(' + logTotal + ' total)';
+      }
+    }
+    if (!selected) selected = payload.name;
   };
 
   // ---- Stream ----
@@ -771,43 +904,45 @@
       const restarted = meta !== null &&
         meta.startedAt !== msg.meta.startedAt;
       if (restarted) resetSession();
-      if (msg.history) {
-        if (fresh || restarted) replayLog(msg.history.events);
-        syncBuckets(msg.history.buckets);
-      }
-    }
-    if (msg.meta) {
       meta = msg.meta;
-      renderIdentity();
-    }
-    if (msg.state) {
-      state = msg.state;
-      renderState();
-    }
-    if (msg.totals) {
-      for (const kind of Object.keys(counters)) {
-        counters[kind] = msg.totals[kind] || 0;
+      for (const payload of msg.queues) {
+        upsertQueue(payload, fresh || restarted);
       }
-    }
-    if (msg.type !== 'batch') {
-      renderCounters();
+      if (!queues[selected]) selected = Object.keys(queues)[0] || null;
+      renderAll();
       return;
     }
-    const completed =
-      msg.counts.success + msg.counts.failure + msg.counts.timeout;
-    buckets[BUCKETS - 1] += completed;
-    pushSamples(waits, msg.waits);
-    pushSamples(execs, msg.execs);
-    if (logHover) {
-      if (pendingBatches.length >= 100) {
-        pendingBatches.shift();
-        droppedWhileHover++;
-      }
-      pendingBatches.push(msg);
-    } else {
-      renderLogBatch(msg);
+    if (msg.type === 'watched') {
+      upsertQueue(msg.queue, true);
+      renderAll();
+      return;
     }
-    renderCounters();
+    if (msg.type !== 'batch') return;
+    for (const part of msg.queues) {
+      let q = queues[part.name];
+      if (!q) {
+        q = newQueue(part.name);
+        queues[part.name] = q;
+        if (!selected) selected = part.name;
+      }
+      q.state = part.state;
+      q.totals = part.totals;
+      const completed =
+        part.counts.success + part.counts.failure + part.counts.timeout;
+      q.buckets[BUCKETS - 1] += completed;
+      pushSamples(q.waits, part.waits);
+      pushSamples(q.execs, part.execs);
+      if (logHover) {
+        if (pendingParts.length >= 100) {
+          pendingParts.shift();
+          droppedWhileHover++;
+        }
+        pendingParts.push({ part, ts: msg.ts });
+      } else {
+        renderLogPart(part, msg.ts);
+      }
+    }
+    renderAll();
   };
 
   const connect = () => {
@@ -825,9 +960,7 @@
 
   setInterval(() => {
     rotateBuckets();
-    renderCounters();
-    renderChart();
-    renderIdentity();
+    renderAll();
   }, 1000);
 
   window.addEventListener('resize', renderChart);

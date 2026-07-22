@@ -104,6 +104,17 @@ const queue = new Kuyruk({ concurrency: 5 });
 monitor(queue, { port: 8228 }); // kuyruk monitor: http://127.0.0.1:8228
 ```
 
+Several queues can share one monitor server and dashboard:
+
+```js
+const m = monitor({ port: 8228, name: 'shop' });
+m.watch(emails, 'emails').watch(webhooks, 'webhooks').watch(images, 'images');
+```
+
+With more than one queue the dashboard adds an overview table (per-queue
+active/waiting, rate, failures, sparkline); clicking a row switches the
+detail view and the pause/clear controls to that queue.
+
 The dashboard streams live queue activity over SSE and shows:
 
 - Active tasks vs. concurrency (per-channel occupancy), waiting vs. size limit
@@ -134,7 +145,7 @@ Notes:
   share one timestamp queue).
 - Attach the monitor before the queue starts taking tasks — in round-robin
   mode, child queues created earlier are invisible to it.
-- Control endpoints (`POST /api/pause|resume|clear`) require the
+- Control endpoints (`POST /api/<queue>/pause|resume|clear`) require the
   `x-kuyruk-monitor: 1` header, which shields them from cross-site requests
   (CSRF); the dashboard sends it automatically. When binding to a
   non-loopback host, put the monitor behind an authenticating reverse proxy.
