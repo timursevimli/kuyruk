@@ -5,7 +5,7 @@ const { test, plan } = require('tap');
 const { Kuyruk } = require('../kuyruk.js');
 const { monitor } = require('../monitor.js');
 
-plan(12);
+plan(14);
 
 const HOST = '127.0.0.1';
 let portCounter = 8840;
@@ -362,6 +362,74 @@ test('Occupied port does not crash the process', async (t) => {
 
   first.stop();
   second.stop();
+});
+
+test('Replays recent history to late clients', async (t) => {
+  const port = nextPort();
+  const queue = new Kuyruk({ concurrency: 1 })
+    .process((item, callback) => {
+      if (item === 'bad') callback(new Error('history boom'));
+      else callback(null, item);
+    })
+    .success(() => {})
+    .failure(() => {});
+  const handle = monitor(queue, { port });
+
+  const witness = await connect(port);
+  queue.add('ok');
+  queue.add('bad');
+  queue.add('ok');
+  await collectBatches(witness, 'success', 2);
+  witness.close();
+
+  const late = await connect(port);
+  const hello = await late.take((m) => m.type === 'hello');
+  const failure = hello.history.events.find((e) => e.type === 'failure');
+  t.equal(failure.detail, 'history boom', 'failure replayed');
+  const successes = hello.history.events
+    .filter((e) => e.type === 'success')
+    .reduce((sum, e) => sum + e.count, 0);
+  t.equal(successes, 2, 'success groups replayed with counts');
+  const completed = hello.history.buckets.values.reduce((s, v) => s + v, 0);
+  t.equal(completed, 3, 'throughput buckets replayed');
+
+  late.close();
+  handle.stop();
+});
+
+test('History is capped and details truncated', async (t) => {
+  const port = nextPort();
+  const longMessage = 'x'.repeat(500);
+  const queue = new Kuyruk({ concurrency: 1 })
+    .process((item, callback) => {
+      callback(new Error(longMessage));
+    })
+    .failure(() => {});
+  const handle = monitor(queue, { port, history: 10 });
+
+  for (let i = 0; i < 150; i++) queue.add(i);
+
+  const client = await connect(port);
+  const hello = await client.take((m) => m.type === 'hello');
+  t.equal(hello.history.events.length, 10, 'ring buffer never grows past cap');
+  t.equal(
+    hello.history.events[0].detail.length,
+    200,
+    'details truncated to 200 chars',
+  );
+  client.close();
+  handle.stop();
+
+  const bare = nextPort();
+  const off = monitor(new Kuyruk({ concurrency: 1 }), {
+    port: bare,
+    history: 0,
+  });
+  const client2 = await connect(bare);
+  const hello2 = await client2.take((m) => m.type === 'hello');
+  t.strictSame(hello2.history.events, [], 'history: 0 disables replay');
+  client2.close();
+  off.stop();
 });
 
 test('stop() shuts the server down', async (t) => {

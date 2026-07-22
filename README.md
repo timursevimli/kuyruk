@@ -139,7 +139,12 @@ Notes:
   (CSRF); the dashboard sends it automatically. When binding to a
   non-loopback host, put the monitor behind an authenticating reverse proxy.
 - Counters are kept server-side, so page reloads and SSE reconnects never
-  lose or skew them. `stop()` restores the queue's original methods; a second
+  lose or skew them. Recent history (last `history` events, default 200,
+  clamped to 10 000, `0` to disable; error details truncated to 200 chars)
+  and the last 60 s of throughput are replayed to every connecting client,
+  so a refreshed or late-joining dashboard shows the same log and chart a
+  live one would. Memory stays constant: the history is a fixed-size ring
+  buffer, one copy per monitor regardless of connected clients. `stop()` restores the queue's original methods; a second
   `monitor()` call on an already-monitored queue throws.
 
 ## API

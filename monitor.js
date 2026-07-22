@@ -14,6 +14,9 @@ const HEARTBEAT_INTERVAL = 25000;
 const MAX_CLIENT_BUFFER = 1024 * 1024;
 const MAX_SAMPLES_PER_FLUSH = 100;
 const MAX_EVENTS_PER_FLUSH = 50;
+const MAX_HISTORY = 10000;
+const MAX_DETAIL_LENGTH = 200;
+const HISTORY_BUCKETS = 60;
 
 const emptyBatch = () => ({
   counts: { added: 0, success: 0, failure: 0, timeout: 0, rejected: 0 },
@@ -30,6 +33,14 @@ const MONITORED = Symbol('kuyruk.monitor');
 
 const monitor = (queue, options = {}) => {
   const { port = 8228, host = '127.0.0.1', name = 'kuyruk' } = options;
+  let { history = 200 } = options;
+  if (history > MAX_HISTORY) {
+    console.error(
+      `kuyruk monitor: history ${history} clamped to ${MAX_HISTORY}`,
+    );
+    history = MAX_HISTORY;
+  }
+  if (history < 0) history = 0;
   if (queue[MONITORED]) {
     throw new Error('Monitor is already attached to this queue');
   }
@@ -42,11 +53,37 @@ const monitor = (queue, options = {}) => {
   let dirty = false;
   let lastStateJson = '';
   const totals = { added: 0, success: 0, failure: 0, timeout: 0, rejected: 0 };
+  const historyBuf = new FixedQueue();
+  const secBuckets = new Array(HISTORY_BUCKETS).fill(0);
+  let secBase = Math.floor(Date.now() / 1000);
 
   const bump = (kind) => {
     batch.counts[kind]++;
     totals[kind]++;
     dirty = true;
+  };
+
+  // Ring buffer: eviction on every insert keeps memory constant no
+  // matter how long the queue runs.
+  const remember = (entry) => {
+    if (history === 0) return;
+    historyBuf.push(entry);
+    while (historyBuf.length > history) historyBuf.shift();
+  };
+
+  const rotateSecBuckets = () => {
+    const now = Math.floor(Date.now() / 1000);
+    let shift = now - secBase;
+    if (shift <= 0) return;
+    if (shift > HISTORY_BUCKETS) shift = HISTORY_BUCKETS;
+    secBuckets.splice(0, shift);
+    for (let i = 0; i < shift; i++) secBuckets.push(0);
+    secBase = now;
+  };
+
+  const recordCompletion = () => {
+    rotateSecBuckets();
+    secBuckets[HISTORY_BUCKETS - 1]++;
   };
 
   const sample = (kind, value) => {
@@ -56,8 +93,15 @@ const monitor = (queue, options = {}) => {
   };
 
   const event = (type, detail = '', factor = undefined) => {
+    const entry = {
+      type,
+      ts: Date.now(),
+      detail: String(detail).slice(0, MAX_DETAIL_LENGTH),
+      factor,
+    };
+    remember(entry);
     if (batch.events.length < MAX_EVENTS_PER_FLUSH) {
-      batch.events.push({ type, ts: Date.now(), detail, factor });
+      batch.events.push(entry);
     } else {
       batch.dropped.events++;
     }
@@ -111,6 +155,15 @@ const monitor = (queue, options = {}) => {
   };
 
   const flush = () => {
+    // Success groups land in history even when nobody is watching, so a
+    // late client sees the same log a live one would have.
+    if (batch.counts.success > 0) {
+      remember({
+        type: 'success',
+        ts: Date.now(),
+        count: batch.counts.success,
+      });
+    }
     if (clients.size === 0) {
       if (dirty) {
         batch = emptyBatch();
@@ -224,6 +277,7 @@ const monitor = (queue, options = {}) => {
     } else {
       bump('success');
     }
+    recordCompletion();
     originalFinish(err, res, details);
   };
 
@@ -267,12 +321,17 @@ const monitor = (queue, options = {}) => {
         'X-Accel-Buffering': 'no',
       });
       clients.add(res);
+      rotateSecBuckets();
       const hello = JSON.stringify({
         type: 'hello',
         ts: Date.now(),
         meta: { name, pid: process.pid, startedAt },
         state: snapshot(),
         totals,
+        history: {
+          events: [...historyBuf],
+          buckets: { base: secBase, values: secBuckets },
+        },
       });
       res.write(`data: ${hello}\n\n`);
       req.on('close', () => clients.delete(res));

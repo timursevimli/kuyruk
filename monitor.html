@@ -733,9 +733,49 @@
     if (cross) cross.style.display = 'none';
   });
 
+  // ---- History replay & session reset ----
+  const resetSession = () => {
+    log.innerHTML = '';
+    logTotal = 0;
+    successGroup = null;
+    pendingBatches.length = 0;
+    droppedWhileHover = 0;
+    waits.length = 0;
+    execs.length = 0;
+    buckets.fill(0);
+  };
+
+  const replayLog = (entries) => {
+    for (const entry of entries) {
+      if (entry.type === 'success') addSuccesses(entry.count, entry.ts);
+      else addEventRow(entry);
+    }
+    trimLog();
+    $('logCount').textContent = '(' + logTotal + ' total)';
+  };
+
+  const syncBuckets = (server) => {
+    rotateBuckets();
+    const offset = bucketBase - server.base;
+    for (let i = 0; i < BUCKETS; i++) {
+      const j = i + offset;
+      buckets[i] = j >= 0 && j < server.values.length ? server.values[j] : 0;
+    }
+  };
+
   // ---- Stream ----
   const onMessage = (msg) => {
     rotateBuckets();
+    if (msg.type === 'hello') {
+      const fresh = meta === null;
+      const restarted = meta !== null &&
+        meta.startedAt !== msg.meta.startedAt;
+      if (restarted) resetSession();
+      if (msg.history) {
+        if (fresh || restarted) replayLog(msg.history.events);
+        syncBuckets(msg.history.buckets);
+      }
+    }
     if (msg.meta) {
       meta = msg.meta;
       renderIdentity();

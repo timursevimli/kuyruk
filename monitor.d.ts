@@ -4,6 +4,7 @@ interface MonitorOptions {
   port?: number;
   host?: string;
   name?: string;
+  history?: number;
 }
 
 interface MonitorHandle {
