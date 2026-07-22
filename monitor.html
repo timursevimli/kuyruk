@@ -125,6 +125,35 @@
     margin: 0 0 10px;
     color: var(--text-secondary);
   }
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .card-head h2 { margin: 0; }
+  .chips { display: flex; gap: 6px; margin-left: auto; }
+  .chip {
+    font-size: 11px;
+    padding: 3px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .chip.on {
+    border-color: var(--series-1);
+    color: var(--series-1);
+    font-weight: 600;
+  }
+  .hover-note {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: none;
+  }
+  .log-paused .hover-note { display: inline; }
   .slots { display: flex; gap: 4px; flex-wrap: wrap; }
   .slot {
     width: 22px;
@@ -164,7 +193,7 @@
     white-space: nowrap;
   }
   #tooltip .t { color: var(--text-muted); font-size: 11px; }
-  .log-wrap { max-height: 300px; overflow-y: auto; }
+  .log-wrap { max-height: 300px; overflow-y: auto; margin-top: 10px; }
   .ev {
     display: inline-flex;
     align-items: center;
@@ -178,6 +207,7 @@
   .ev-rejected { color: var(--status-serious); }
   .ev-neutral { color: var(--text-secondary); }
   .muted { color: var(--text-muted); }
+  .filter-problems tr.row-ok { display: none; }
 </style>
 </head>
 <body>
@@ -225,14 +255,14 @@
       <div class="value num" id="tRate">0<span class="sub"> /s</span></div>
     </div>
     <div class="tile">
-      <div class="label">Avg wait</div>
+      <div class="label">Wait p50</div>
       <div class="value num" id="tWait">—</div>
-      <div class="sub">time in queue</div>
+      <div class="sub" id="tWaitSub">p95 — · time in queue</div>
     </div>
     <div class="tile">
-      <div class="label">Avg exec</div>
+      <div class="label">Exec p50</div>
       <div class="value num" id="tExec">—</div>
-      <div class="sub">processing time</div>
+      <div class="sub" id="tExecSub">p95 — · processing time</div>
     </div>
   </div>
 
@@ -245,14 +275,21 @@
   <div class="card">
     <h2>Completed tasks per second — last 60 s</h2>
     <div id="chartbox">
-      <svg id="chart" preserveAspectRatio="none"></svg>
+      <svg id="chart"></svg>
       <div id="tooltip"></div>
     </div>
   </div>
 
-  <div class="card">
-    <h2>Event log <span class="muted" id="logCount"></span></h2>
-    <div class="log-wrap">
+  <div class="card" id="logCard">
+    <div class="card-head">
+      <h2>Event log <span class="muted" id="logCount"></span></h2>
+      <span class="hover-note">⏸ scroll paused (hover)</span>
+      <div class="chips">
+        <button class="chip on" id="chipAll">All</button>
+        <button class="chip" id="chipProblems">Problems</button>
+      </div>
+    </div>
+    <div class="log-wrap" id="logWrap">
       <table class="log-table">
         <thead><tr><th>Time</th><th>Event</th><th>Detail</th></tr></thead>
         <tbody id="log"></tbody>
@@ -265,16 +302,19 @@
   'use strict';
   const $ = (id) => document.getElementById(id);
 
+  const MAX_LOG_ROWS = 200;
+  const SAMPLE_WINDOW = 500;
+  const BUCKETS = 60;
+
   const counters = {
     success: 0, failure: 0, timeout: 0, rejected: 0, added: 0,
   };
   const waits = [];
   const execs = [];
-  const BUCKETS = 60;
   const buckets = new Array(BUCKETS).fill(0);
   let bucketBase = Math.floor(Date.now() / 1000);
   let state = null;
-  let logRows = 0;
+  let logTotal = 0;
 
   const rotateBuckets = () => {
     const now = Math.floor(Date.now() / 1000);
@@ -286,14 +326,19 @@
     bucketBase = now;
   };
 
-  const pushSample = (arr, v) => {
-    arr.push(v);
-    if (arr.length > 200) arr.shift();
+  const pushSamples = (arr, values) => {
+    for (const v of values) arr.push(v);
+    if (arr.length > SAMPLE_WINDOW) arr.splice(0, arr.length - SAMPLE_WINDOW);
   };
 
-  const avg = (arr) => {
+  const percentile = (arr, p) => {
     if (arr.length === 0) return null;
-    return arr.reduce((s, v) => s + v, 0) / arr.length;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const idx = Math.min(
+      sorted.length - 1,
+      Math.floor((p / 100) * sorted.length),
+    );
+    return sorted[idx];
   };
 
   const fmtMs = (v) => {
@@ -302,36 +347,127 @@
     return (v / 1000).toFixed(2) + ' s';
   };
 
+  const fmtTime = (ts) => new Date(ts).toTimeString().slice(0, 8);
+
   const EV_META = {
-    success: { cls: 'ev-success', ic: '✓', label: 'success' },
-    failure: { cls: 'ev-failure', ic: '✕', label: 'failure' },
-    timeout: { cls: 'ev-timeout', ic: '⏱', label: 'timeout' },
-    rejected: { cls: 'ev-rejected', ic: '⛔', label: 'rejected' },
-    added: { cls: 'ev-neutral', ic: '＋', label: 'added' },
-    start: { cls: 'ev-neutral', ic: '▶', label: 'start' },
-    pause: { cls: 'ev-neutral', ic: '⏸', label: 'pause' },
-    resume: { cls: 'ev-neutral', ic: '⏵', label: 'resume' },
-    clear: { cls: 'ev-neutral', ic: '⌫', label: 'clear' },
+    failure: { cls: 'ev-failure', ic: '✕', label: 'failure', ok: false },
+    timeout: { cls: 'ev-timeout', ic: '⏱', label: 'timeout', ok: false },
+    rejected: { cls: 'ev-rejected', ic: '⛔', label: 'rejected', ok: false },
+    pause: { cls: 'ev-neutral', ic: '⏸', label: 'pause', ok: false },
+    resume: { cls: 'ev-neutral', ic: '⏵', label: 'resume', ok: false },
+    clear: { cls: 'ev-neutral', ic: '⌫', label: 'clear', ok: false },
+    dropped: { cls: 'ev-neutral', ic: '…', label: 'dropped', ok: true },
   };
 
-  const logEvent = (msg, detail) => {
-    const meta = EV_META[msg.type];
-    if (!meta) return;
+  // ---- Event log: grouped successes, hover pause, filters ----
+  const log = $('log');
+  let successGroup = null; // { tr, count, firstTs } when top row groups ✓
+  let logHover = false;
+  const pendingBatches = [];
+  let droppedWhileHover = 0;
+
+  const trimLog = () => {
+    while (log.children.length > MAX_LOG_ROWS) {
+      const last = log.lastChild;
+      if (successGroup && successGroup.tr === last) successGroup = null;
+      log.removeChild(last);
+    }
+  };
+
+  const makeRow = (cls, html, okRow) => {
     const tr = document.createElement('tr');
-    const time = new Date(msg.ts).toLocaleTimeString();
-    tr.innerHTML =
-      '<td class="num muted">' + time + '</td>' +
+    if (okRow) tr.className = 'row-ok';
+    tr.innerHTML = html;
+    return tr;
+  };
+
+  const addEventRow = (ev) => {
+    const meta = EV_META[ev.type];
+    if (!meta) return;
+    const detail = ev.detail || '';
+    const factor = ev.factor !== undefined && ev.factor !== null ?
+      ' (factor ' + ev.factor + ')' : '';
+    const tr = makeRow(meta.cls,
+      '<td class="num muted">' + fmtTime(ev.ts) + '</td>' +
       '<td><span class="ev ' + meta.cls + '"><span class="ic">' +
       meta.ic + '</span>' + meta.label + '</span></td>' +
-      '<td class="muted"></td>';
-    tr.lastChild.textContent = detail || '';
-    const log = $('log');
+      '<td class="muted"></td>', meta.ok);
+    tr.lastChild.textContent = detail + factor;
     log.prepend(tr);
-    logRows++;
-    while (log.children.length > 100) log.removeChild(log.lastChild);
-    $('logCount').textContent = '(' + logRows + ' total)';
+    successGroup = null;
+    logTotal++;
   };
 
+  const addSuccesses = (count, ts) => {
+    if (count <= 0) return;
+    logTotal += count;
+    if (successGroup && log.firstChild === successGroup.tr) {
+      successGroup.count += count;
+      successGroup.tr.cells[0].textContent = fmtTime(ts);
+      successGroup.tr.cells[1].firstChild.lastChild.textContent =
+        'success ×' + successGroup.count;
+      return;
+    }
+    const tr = makeRow('ev-success',
+      '<td class="num muted">' + fmtTime(ts) + '</td>' +
+      '<td><span class="ev ev-success"><span class="ic">✓</span>' +
+      '<span>success' + (count > 1 ? ' ×' + count : '') + '</span>' +
+      '</span></td><td class="muted"></td>', true);
+    log.prepend(tr);
+    successGroup = { tr, count };
+  };
+
+  const addDroppedRow = (n, what, ts) => {
+    if (n <= 0) return;
+    const tr = makeRow('ev-neutral',
+      '<td class="num muted">' + fmtTime(ts) + '</td>' +
+      '<td><span class="ev ev-neutral"><span class="ic">…</span>' +
+      'dropped</span></td>' +
+      '<td class="muted">' + n + ' ' + what + ' not shown</td>', true);
+    log.prepend(tr);
+    successGroup = null;
+  };
+
+  const renderLogBatch = (msg) => {
+    addSuccesses(msg.counts.success, msg.ts);
+    for (const ev of msg.events) addEventRow(ev);
+    addDroppedRow(msg.dropped.events, 'events', msg.ts);
+    trimLog();
+    $('logCount').textContent = '(' + logTotal + ' total)';
+  };
+
+  const flushPending = () => {
+    for (const m of pendingBatches) renderLogBatch(m);
+    pendingBatches.length = 0;
+    if (droppedWhileHover > 0) {
+      addDroppedRow(droppedWhileHover, 'batches (paused)', Date.now());
+      droppedWhileHover = 0;
+    }
+  };
+
+  const logWrap = $('logWrap');
+  logWrap.addEventListener('mouseenter', () => {
+    logHover = true;
+    $('logCard').classList.add('log-paused');
+  });
+  logWrap.addEventListener('mouseleave', () => {
+    logHover = false;
+    $('logCard').classList.remove('log-paused');
+    flushPending();
+  });
+
+  $('chipAll').addEventListener('click', () => {
+    $('chipAll').classList.add('on');
+    $('chipProblems').classList.remove('on');
+    logWrap.classList.remove('filter-problems');
+  });
+  $('chipProblems').addEventListener('click', () => {
+    $('chipProblems').classList.add('on');
+    $('chipAll').classList.remove('on');
+    logWrap.classList.add('filter-problems');
+  });
+
+  // ---- Gauges & tiles ----
   const renderBadges = () => {
     if (!state) return;
     const b = [];
@@ -396,23 +532,31 @@
     $('tFailure').textContent = counters.failure;
     $('tTimeout').textContent = counters.timeout;
     $('tRejected').textContent = counters.rejected;
-    $('tWait').textContent = fmtMs(avg(waits));
-    $('tExec').textContent = fmtMs(avg(execs));
+    $('tWait').textContent = fmtMs(percentile(waits, 50));
+    $('tWaitSub').textContent =
+      'p95 ' + fmtMs(percentile(waits, 95)) + ' · time in queue';
+    $('tExec').textContent = fmtMs(percentile(execs, 50));
+    $('tExecSub').textContent =
+      'p95 ' + fmtMs(percentile(execs, 95)) + ' · processing time';
     const last5 = buckets.slice(BUCKETS - 6, BUCKETS - 1);
     const rate = last5.reduce((s, v) => s + v, 0) / 5;
     $('tRate').innerHTML = (Math.round(rate * 10) / 10) +
       '<span class="sub"> /s</span>';
   };
 
-  const W = 1000;
+  // ---- Throughput chart ----
   const H = 160;
   const PAD = { l: 34, r: 8, t: 8, b: 18 };
+  const chartW = () => Math.max(320, $('chart').clientWidth || 1000);
+  const chartMax = (data) =>
+    Math.max(4, Math.ceil(Math.max(...data) / 4) * 4);
 
   const renderChart = () => {
     const svg = $('chart');
+    const W = chartW();
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
     const data = buckets.slice(0, BUCKETS - 1);
-    const max = Math.max(4, Math.ceil(Math.max(...data) / 4) * 4);
+    const max = chartMax(data);
     const iw = W - PAD.l - PAD.r;
     const ih = H - PAD.t - PAD.b;
     const x = (i) => PAD.l + (i / (data.length - 1)) * iw;
@@ -429,12 +573,11 @@
         val + '</text>';
     }
     let line = '';
-    let area = '';
     data.forEach((v, i) => {
       line += (i === 0 ? 'M' : 'L') + x(i).toFixed(1) + ' ' + y(v).toFixed(1);
     });
-    area = line + 'L' + x(data.length - 1).toFixed(1) + ' ' + (PAD.t + ih) +
-      'L' + PAD.l + ' ' + (PAD.t + ih) + 'Z';
+    const area = line + 'L' + x(data.length - 1).toFixed(1) + ' ' +
+      (PAD.t + ih) + 'L' + PAD.l + ' ' + (PAD.t + ih) + 'Z';
     const axis = '<line x1="' + PAD.l + '" x2="' + (W - PAD.r) + '" y1="' +
       (PAD.t + ih) + '" y2="' + (PAD.t + ih) +
       '" stroke="var(--baseline)" stroke-width="1"/>' +
@@ -457,12 +600,13 @@
   chartbox.addEventListener('mousemove', (e) => {
     const svg = $('chart');
     const rect = svg.getBoundingClientRect();
+    const W = chartW();
     const data = buckets.slice(0, BUCKETS - 1);
     const iw = W - PAD.l - PAD.r;
-    const px = ((e.clientX - rect.left) / rect.width) * W;
+    const px = e.clientX - rect.left;
     let i = Math.round(((px - PAD.l) / iw) * (data.length - 1));
     i = Math.max(0, Math.min(data.length - 1, i));
-    const max = Math.max(4, Math.ceil(Math.max(...data) / 4) * 4);
+    const max = chartMax(data);
     const ih = H - PAD.t - PAD.b;
     const cx = PAD.l + (i / (data.length - 1)) * iw;
     const cy = PAD.t + ih - (data[i] / max) * ih;
@@ -478,8 +622,7 @@
     tip.innerHTML = '<b class="num">' + data[i] + '</b> completed' +
       '<div class="t">' + secsAgo + ' s ago</div>';
     tip.style.display = 'block';
-    const bx = (cx / W) * rect.width;
-    tip.style.left = Math.min(rect.width - 130, Math.max(0, bx + 12)) + 'px';
+    tip.style.left = Math.min(rect.width - 130, Math.max(0, cx + 12)) + 'px';
     tip.style.top = '10px';
   });
   chartbox.addEventListener('mouseleave', () => {
@@ -488,51 +631,30 @@
     if (cross) cross.style.display = 'none';
   });
 
+  // ---- Stream ----
   const onMessage = (msg) => {
     rotateBuckets();
-    switch (msg.type) {
-      case 'state':
-        state = msg.state;
-        renderState();
-        return;
-      case 'added':
-        counters.added++;
-        break;
-      case 'rejected':
-        counters.rejected++;
-        logEvent(msg, 'queue full');
-        break;
-      case 'start':
-        pushSample(waits, msg.wait);
-        break;
-      case 'executed':
-        pushSample(execs, msg.duration);
-        return;
-      case 'success':
-        counters.success++;
-        buckets[BUCKETS - 1]++;
-        logEvent(msg, msg.factor !== undefined && msg.factor !== null ?
-          'factor ' + msg.factor : '');
-        break;
-      case 'failure':
-        counters.failure++;
-        buckets[BUCKETS - 1]++;
-        logEvent(msg, msg.error);
-        break;
-      case 'timeout':
-        counters.timeout++;
-        buckets[BUCKETS - 1]++;
-        logEvent(msg, msg.error);
-        break;
-      case 'pause':
-      case 'resume':
-      case 'clear':
-        logEvent(msg, '');
-        break;
-    }
     if (msg.state) {
       state = msg.state;
       renderState();
+    }
+    if (msg.type !== 'batch') return;
+    for (const kind of Object.keys(counters)) {
+      counters[kind] += msg.counts[kind] || 0;
+    }
+    const completed =
+      msg.counts.success + msg.counts.failure + msg.counts.timeout;
+    buckets[BUCKETS - 1] += completed;
+    pushSamples(waits, msg.waits);
+    pushSamples(execs, msg.execs);
+    if (logHover) {
+      if (pendingBatches.length >= 100) {
+        pendingBatches.shift();
+        droppedWhileHover++;
+      }
+      pendingBatches.push(msg);
+    } else {
+      renderLogBatch(msg);
     }
     renderCounters();
   };
@@ -556,6 +678,7 @@
     renderChart();
   }, 1000);
 
+  window.addEventListener('resize', renderChart);
   renderChart();
   connect();
 </script>

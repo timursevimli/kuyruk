@@ -108,17 +108,23 @@ The dashboard streams live queue activity over SSE and shows:
 
 - Active tasks vs. concurrency (per-channel occupancy), waiting vs. size limit
 - Success / failure / timeout / rejected counters and throughput per second
-- Average wait time in queue and average processing time
+- Wait time in queue and processing time (p50/p95)
 - Queue configuration badges (FIFO/LIFO, priority, round-robin, debounce,
   timeouts, paused state)
 - Per-factor queue breakdown in round-robin mode
-- A live event log (task lifecycle, pause/resume/clear)
+- A live event log with filtering (All / Problems), grouped success rows,
+  and scroll pause on hover
 
 Notes:
 
 - The monitor instruments the queue in-process (wraps `add`, `process`,
   `finish`, `pause`, `resume`, `clear`) and adds no overhead when no browser
   is connected beyond a cheap wrapper call per task.
+- Memory is bounded at any throughput: events are aggregated server-side and
+  flushed as one SSE message every 300 ms (excess samples/events are counted
+  as dropped, never stored), and clients that stop reading are disconnected
+  once their socket buffer exceeds 1 MB. A heartbeat keeps connections alive
+  through proxies and load balancers.
 - The server binds to `127.0.0.1` by default and never keeps your process
   alive (`unref`). Call the returned `stop()` to shut it down explicitly.
 - Wait-time measurement for data items is matched FIFO, so it is approximate
