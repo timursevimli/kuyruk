@@ -69,6 +69,24 @@
     background: var(--status-critical);
   }
   .conn.on .dot { background: var(--status-good); }
+  .identity { font-size: 12px; color: var(--text-muted); }
+  .controls { display: flex; gap: 6px; }
+  .btn {
+    font-size: 12px;
+    padding: 3px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn:hover { border-color: var(--baseline); }
+  .btn.arm {
+    color: var(--status-critical);
+    border-color: var(--status-critical);
+    font-weight: 600;
+  }
   .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
   .badge {
     font-size: 11px;
@@ -208,6 +226,7 @@
   .ev-neutral { color: var(--text-secondary); }
   .muted { color: var(--text-muted); }
   .filter-problems tr.row-ok { display: none; }
+  .spark { width: 100%; height: 26px; margin-top: 6px; display: block; }
 </style>
 </head>
 <body>
@@ -216,6 +235,11 @@
     <h1>kuyruk monitor</h1>
     <span class="conn" id="conn"><span class="dot"></span>
       <span id="connText">connecting…</span></span>
+    <span class="identity num" id="identity"></span>
+    <div class="controls">
+      <button class="btn" id="btnPause">⏸ Pause</button>
+      <button class="btn" id="btnClear">⌫ Clear</button>
+    </div>
     <div class="badges" id="badges"></div>
   </header>
 
@@ -258,11 +282,13 @@
       <div class="label">Wait p50</div>
       <div class="value num" id="tWait">—</div>
       <div class="sub" id="tWaitSub">p95 — · time in queue</div>
+      <svg class="spark" id="sparkWait"></svg>
     </div>
     <div class="tile">
       <div class="label">Exec p50</div>
       <div class="value num" id="tExec">—</div>
       <div class="sub" id="tExecSub">p95 — · processing time</div>
+      <svg class="spark" id="sparkExec"></svg>
     </div>
   </div>
 
@@ -314,6 +340,7 @@
   const buckets = new Array(BUCKETS).fill(0);
   let bucketBase = Math.floor(Date.now() / 1000);
   let state = null;
+  let meta = null;
   let logTotal = 0;
 
   const rotateBuckets = () => {
@@ -348,6 +375,16 @@
   };
 
   const fmtTime = (ts) => new Date(ts).toTimeString().slice(0, 8);
+
+  const fmtUptime = (ms) => {
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const rest = (s % 60) + 's';
+    if (h > 0) return h + 'h ' + m + 'm';
+    if (m > 0) return m + 'm ' + rest;
+    return rest;
+  };
 
   const EV_META = {
     failure: { cls: 'ev-failure', ic: '✕', label: 'failure', ok: false },
@@ -467,6 +504,42 @@
     logWrap.classList.add('filter-problems');
   });
 
+  // ---- Controls & identity ----
+  const api = (action) => {
+    fetch('/api/' + action, { method: 'POST' });
+  };
+
+  const btnPause = $('btnPause');
+  btnPause.addEventListener('click', () => {
+    api(state && state.paused ? 'resume' : 'pause');
+  });
+
+  const btnClear = $('btnClear');
+  let clearArm = null;
+  btnClear.addEventListener('click', () => {
+    if (clearArm) {
+      clearTimeout(clearArm);
+      clearArm = null;
+      btnClear.classList.remove('arm');
+      btnClear.textContent = '⌫ Clear';
+      api('clear');
+      return;
+    }
+    btnClear.classList.add('arm');
+    btnClear.textContent = '⌫ Sure?';
+    clearArm = setTimeout(() => {
+      clearArm = null;
+      btnClear.classList.remove('arm');
+      btnClear.textContent = '⌫ Clear';
+    }, 3000);
+  });
+
+  const renderIdentity = () => {
+    if (!meta) return;
+    $('identity').textContent = meta.name + ' · pid ' + meta.pid +
+      ' · up ' + fmtUptime(Date.now() - meta.startedAt);
+  };
+
   // ---- Gauges & tiles ----
   const renderBadges = () => {
     if (!state) return;
@@ -497,6 +570,7 @@
     $('tWaitingSub').textContent =
       state.size === null ? 'unbounded' : 'max ' + state.size;
     renderBadges();
+    btnPause.textContent = state.paused ? '⏵ Resume' : '⏸ Pause';
 
     if (state.roundRobin && state.channels) {
       $('slots').style.display = 'none';
@@ -527,6 +601,29 @@
     }
   };
 
+  const renderSpark = (id, arr) => {
+    const svg = $(id);
+    const data = arr.slice(-60);
+    if (data.length < 2) {
+      svg.innerHTML = '';
+      return;
+    }
+    const w = 100;
+    const h = 26;
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    svg.setAttribute('preserveAspectRatio', 'none');
+    const max = Math.max(...data, 1);
+    let d = '';
+    data.forEach((v, i) => {
+      const px = (i / (data.length - 1)) * w;
+      const py = h - 2 - (v / max) * (h - 4);
+      d += (i === 0 ? 'M' : 'L') + px.toFixed(1) + ' ' + py.toFixed(1);
+    });
+    svg.innerHTML = '<path d="' + d + '" fill="none" ' +
+      'stroke="var(--series-1)" stroke-width="1.5" ' +
+      'vector-effect="non-scaling-stroke"/>';
+  };
+
   const renderCounters = () => {
     $('tSuccess').textContent = counters.success;
     $('tFailure').textContent = counters.failure;
@@ -538,6 +635,8 @@
     $('tExec').textContent = fmtMs(percentile(execs, 50));
     $('tExecSub').textContent =
       'p95 ' + fmtMs(percentile(execs, 95)) + ' · processing time';
+    renderSpark('sparkWait', waits);
+    renderSpark('sparkExec', execs);
     const last5 = buckets.slice(BUCKETS - 6, BUCKETS - 1);
     const rate = last5.reduce((s, v) => s + v, 0) / 5;
     $('tRate').innerHTML = (Math.round(rate * 10) / 10) +
@@ -634,6 +733,10 @@
   // ---- Stream ----
   const onMessage = (msg) => {
     rotateBuckets();
+    if (msg.meta) {
+      meta = msg.meta;
+      renderIdentity();
+    }
     if (msg.state) {
       state = msg.state;
       renderState();
@@ -676,6 +779,7 @@
     rotateBuckets();
     renderCounters();
     renderChart();
+    renderIdentity();
   }, 1000);
 
   window.addEventListener('resize', renderChart);

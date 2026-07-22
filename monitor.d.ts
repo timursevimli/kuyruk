@@ -3,6 +3,7 @@ import { Kuyruk } from './kuyruk';
 interface MonitorOptions {
   port?: number;
   host?: string;
+  name?: string;
 }
 
 interface MonitorHandle {

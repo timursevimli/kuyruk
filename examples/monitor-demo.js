@@ -19,7 +19,7 @@ const queue = new Kuyruk({ concurrency: 5, size: 50 })
   .failure(() => {})
   .drain(() => console.log('drained'));
 
-monitor(queue, { port: 8228 });
+monitor(queue, { port: 8228, name: 'demo' });
 
 let id = 0;
 
@@ -31,11 +31,5 @@ const addBatch = () => {
 };
 
 setInterval(addBatch, 700);
-
-// Pause/resume waves so the dashboard shows state changes
-setInterval(() => {
-  queue.pause();
-  setTimeout(() => queue.resume(), 3000);
-}, 20000);
 
 console.log('Generating tasks… open the monitor URL above.');

@@ -23,7 +23,11 @@ const emptyBatch = () => ({
   dropped: { waits: 0, execs: 0, events: 0 },
 });
 
-const monitor = (queue, { port = 8228, host = '127.0.0.1' } = {}) => {
+const CONTROLS = new Set(['pause', 'resume', 'clear']);
+
+const monitor = (queue, options = {}) => {
+  const { port = 8228, host = '127.0.0.1', name = 'kuyruk' } = options;
+  const startedAt = Date.now();
   const clients = new Set();
   const pendingSince = new FixedQueue();
   let startedBeforeEnqueue = 0;
@@ -221,6 +225,17 @@ const monitor = (queue, { port = 8228, host = '127.0.0.1' } = {}) => {
     if (req.url === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(fs.readFileSync(UI_PATH));
+    } else if (req.method === 'POST' && req.url.startsWith('/api/')) {
+      const action = req.url.slice('/api/'.length);
+      if (!CONTROLS.has(action)) {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+      queue[action]();
+      flush();
+      res.writeHead(204);
+      res.end();
     } else if (req.url === '/events') {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -232,6 +247,7 @@ const monitor = (queue, { port = 8228, host = '127.0.0.1' } = {}) => {
       const hello = JSON.stringify({
         type: 'hello',
         ts: Date.now(),
+        meta: { name, pid: process.pid, startedAt },
         state: snapshot(),
       });
       res.write(`data: ${hello}\n\n`);

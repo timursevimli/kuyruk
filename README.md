@@ -114,6 +114,8 @@ The dashboard streams live queue activity over SSE and shows:
 - Per-factor queue breakdown in round-robin mode
 - A live event log with filtering (All / Problems), grouped success rows,
   and scroll pause on hover
+- Pause / resume / clear controls, and process identity in the header
+  (`name` option, pid, uptime)
 
 Notes:
 
