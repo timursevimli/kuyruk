@@ -253,7 +253,6 @@ class Kuyruk {
   }
 
   clear() {
-    this.count = 0;
     this.waiting = [];
     this.destination = null;
     return this;

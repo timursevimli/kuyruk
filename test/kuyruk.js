@@ -3,7 +3,7 @@
 const { test, plan } = require('tap');
 const { Kuyruk } = require('../kuyruk.js');
 
-plan(29);
+plan(30);
 
 const items = new Array(10).fill('test').map((e, i) => e + i);
 
@@ -706,4 +706,32 @@ test('Should route sync process errors to failure', (t) => {
 
   queue.add('test1');
   queue.add('test2');
+});
+
+test('Should keep concurrency after clear', (t) => {
+  let running = 0;
+  let peak = 0;
+
+  const queue = new Kuyruk({ concurrency: 2 }).process((item, callback) => {
+    running++;
+    if (running > peak) peak = running;
+    setTimeout(() => {
+      running--;
+      callback(null, item);
+    }, 50);
+  });
+
+  t.plan(3);
+
+  queue.add('test1');
+  queue.add('test2');
+  queue.clear();
+  queue.add('test3');
+  queue.add('test4');
+
+  setTimeout(() => {
+    t.equal(peak, 2);
+    t.equal(queue.count, 0);
+    t.equal(queue.isEmpty(), true);
+  }, 300);
 });
