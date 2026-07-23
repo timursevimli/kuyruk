@@ -4,6 +4,14 @@
   "description": "Multifunctional Asynchronous Concurrent Queue",
   "main": "kuyruk.js",
   "types": "kuyruk.d.ts",
+  "files": [
+    "kuyruk.js",
+    "kuyruk.d.ts",
+    "utils.js",
+    "monitor.js",
+    "monitor.d.ts",
+    "monitor.html"
+  ],
   "engines": {
     "node": "16 || 18 || 20 || 22 || 24"
   },
