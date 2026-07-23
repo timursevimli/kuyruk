@@ -3,7 +3,7 @@
 const { test, plan } = require('tap');
 const { Kuyruk } = require('../kuyruk.js');
 
-plan(30);
+plan(31);
 
 const items = new Array(10).fill('test').map((e, i) => e + i);
 
@@ -734,4 +734,24 @@ test('Should keep concurrency after clear', (t) => {
     t.equal(queue.count, 0);
     t.equal(queue.isEmpty(), true);
   }, 300);
+});
+
+test('Debounce keeps error and result', (t) => {
+  const queue = new Kuyruk({ concurrency: 1 })
+    .debounce(2, 20)
+    .process((item, callback) => {
+      if (item === 'test1') callback(new Error('debounced error'));
+      else callback(null, item);
+    })
+    .success((res) => {
+      t.equal(res, 'test2');
+    })
+    .failure((err) => {
+      t.equal(err.message, 'debounced error');
+    });
+
+  t.plan(2);
+
+  queue.add('test1');
+  queue.add('test2');
 });

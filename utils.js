@@ -4,7 +4,7 @@
 const debounce =
   (fn, interval) =>
     (...args) => {
-      setTimeout(fn, interval, null, ...args);
+      setTimeout(fn, interval, ...args);
     };
 
 module.exports = {
