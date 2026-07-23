@@ -5,7 +5,7 @@ const { test, plan } = require('tap');
 const { Kuyruk } = require('../kuyruk.js');
 const { monitor } = require('../monitor.js');
 
-plan(15);
+plan(18);
 
 const HOST = '127.0.0.1';
 let portCounter = 8840;
@@ -540,6 +540,76 @@ test('Watches multiple queues on one port', async (t) => {
   handle.watch(third, 'third');
   const watched = await client.take((m) => m.type === 'watched');
   t.equal(watched.queue.name, 'third', 'late watch announced to clients');
+
+  client.close();
+  handle.stop();
+});
+
+test('Round-robin snapshot reports per-factor channels', async (t) => {
+  const port = nextPort();
+  // Concurrency 0 keeps every item waiting, so the channel counts are
+  // deterministic and no task timers linger after the test.
+  const queue = new Kuyruk({ concurrency: 0 }).roundRobin();
+  const handle = monitor(queue, { port });
+
+  queue.add('a', { factor: 1 });
+  queue.add('b', { factor: 1 });
+  queue.add('c', { factor: 2 });
+
+  const client = await connect(port);
+  const hello = await client.take((m) => m.type === 'hello');
+  const state = hello.queues[0].state;
+  t.equal(state.roundRobin, true, 'round-robin flagged');
+  const byFactor = {};
+  for (const c of state.channels) byFactor[c.factor] = c;
+  t.strictSame(
+    Object.keys(byFactor)
+      .map(Number)
+      .sort((a, b) => a - b),
+    [1, 2],
+    'one channel per distinct factor',
+  );
+  t.equal(byFactor[1].waiting, 2, 'factor 1 holds both its items');
+  t.equal(byFactor[2].waiting, 1, 'factor 2 holds its item');
+  t.equal(state.active, 0, 'nothing active at concurrency 0');
+  t.equal(state.waiting, 3, 'aggregate waiting across channels');
+
+  client.close();
+  handle.stop();
+});
+
+test('Auto-names queues watched without a name', async (t) => {
+  const port = nextPort();
+  const handle = monitor({ port });
+  handle.watch(new Kuyruk({ concurrency: 1 }));
+  handle.watch(new Kuyruk({ concurrency: 1 }));
+
+  const client = await connect(port);
+  const hello = await client.take((m) => m.type === 'hello');
+  t.strictSame(
+    hello.queues.map((q) => q.name).sort(),
+    ['queue-1', 'queue-2'],
+    'sequential default names',
+  );
+
+  client.close();
+  handle.stop();
+});
+
+test('Negative history size disables replay', async (t) => {
+  const port = nextPort();
+  const queue = new Kuyruk({ concurrency: 1 })
+    .process((item, callback) => {
+      callback(new Error('boom'));
+    })
+    .failure(() => {});
+  const handle = monitor(queue, { port, history: -1 });
+
+  for (let i = 0; i < 5; i++) queue.add(i);
+
+  const client = await connect(port);
+  const hello = await client.take((m) => m.type === 'hello');
+  t.strictSame(hello.queues[0].history.events, [], 'no events retained');
 
   client.close();
   handle.stop();
