@@ -3,7 +3,7 @@
 const { test, plan } = require('tap');
 const { Kuyruk } = require('../kuyruk.js');
 
-plan(27);
+plan(28);
 
 const items = new Array(10).fill('test').map((e, i) => e + i);
 
@@ -660,4 +660,30 @@ test('RoundRobin drain across multiple factors', (t) => {
   queue.add('b', { factor: 2 });
   queue.add('b', { factor: 2 });
   queue.add('c', { factor: 3 });
+});
+
+test('Should not lose queued task when adding from callback', (t) => {
+  const finished = [];
+
+  const queue = new Kuyruk({ concurrency: 1 })
+    .process((item, callback) => {
+      setTimeout(callback, 10, null, item);
+    })
+    .success((res) => {
+      finished.push(res);
+      if (res === 'test1') queue.add('test3');
+    })
+    .failure(() => {
+      t.fail('Never should this line');
+    });
+
+  t.plan(2);
+
+  queue.add('test1');
+  queue.add('test2');
+
+  setTimeout(() => {
+    t.equal(finished.join(','), 'test1,test3,test2');
+    t.equal(queue.isEmpty(), true);
+  }, 200);
 });

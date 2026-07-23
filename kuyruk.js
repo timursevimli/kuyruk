@@ -77,6 +77,8 @@ class Kuyruk {
   #takeNext() {
     if (!this.paused) {
       const { waiting, waitTimeout } = this;
+      const hasChannel = this.count < this.concurrency;
+      if (!hasChannel) return;
       const task = waiting.shift();
       if (waitTimeout !== Infinity) {
         const delay = Date.now() - task.start;
@@ -93,8 +95,7 @@ class Kuyruk {
           return;
         }
       }
-      const hasChannel = this.count < this.concurrency;
-      if (hasChannel) this.#next(task.item);
+      this.#next(task.item);
     }
   }
 
