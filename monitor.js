@@ -1,8 +1,8 @@
 'use strict';
 
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
 const { FixedQueue } = require('@tsevimli/collections');
 
 const UI_PATH = path.join(__dirname, 'monitor.html');
@@ -291,7 +291,7 @@ const createWatcher = (queue, name, historySize) => {
   };
 };
 
-const monitor = (queueOrOptions, maybeOptions) => {
+const monitor = (queueOrOptions, maybeOptions = null) => {
   const isQueue =
     Boolean(queueOrOptions) &&
     typeof queueOrOptions.add === 'function' &&
