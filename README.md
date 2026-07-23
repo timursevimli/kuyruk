@@ -93,8 +93,9 @@ for (let i = 0; i < 10; i++) {
 
 ## Monitoring (optional)
 
-kuyruk ships with an opt-in, zero-dependency real-time dashboard. Attach it to
-any queue and open the printed URL in a browser:
+kuyruk ships with an opt-in real-time dashboard that adds no dependency of its
+own (it reuses `@tsevimli/collections`, which kuyruk already requires). Attach
+it to any queue and open the printed URL in a browser:
 
 ```js
 const { Kuyruk } = require('kuyruk');
@@ -114,6 +115,9 @@ m.watch(emails, 'emails').watch(webhooks, 'webhooks').watch(images, 'images');
 With more than one queue the dashboard adds an overview table (per-queue
 active/waiting, rate, failures, sparkline); clicking a row switches the
 detail view and the pause/clear controls to that queue.
+
+Runnable examples: `examples/monitor-demo.js` (single queue) and
+`examples/multi-monitor-demo.js` (three queues on one port).
 
 The dashboard streams live queue activity over SSE and shows:
 
