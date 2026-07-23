@@ -3,7 +3,7 @@
 const { test, plan } = require('tap');
 const { Kuyruk } = require('../kuyruk.js');
 
-plan(28);
+plan(29);
 
 const items = new Array(10).fill('test').map((e, i) => e + i);
 
@@ -686,4 +686,24 @@ test('Should not lose queued task when adding from callback', (t) => {
     t.equal(finished.join(','), 'test1,test3,test2');
     t.equal(queue.isEmpty(), true);
   }, 200);
+});
+
+test('Should route sync process errors to failure', (t) => {
+  const queue = new Kuyruk({ concurrency: 1 })
+    .process((item, callback) => {
+      if (item === 'test1') throw new Error('sync error');
+      setTimeout(callback, 0, null, item);
+    })
+    .success((res) => {
+      t.equal(res, 'test2');
+      t.equal(queue.count, 0);
+    })
+    .failure((err) => {
+      t.equal(err.message, 'sync error');
+    });
+
+  t.plan(3);
+
+  queue.add('test1');
+  queue.add('test2');
 });
