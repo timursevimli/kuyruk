@@ -6,6 +6,8 @@ const path = require('node:path');
 const { FixedQueue } = require('@tsevimli/collections');
 
 const UI_PATH = path.join(__dirname, 'monitor.html');
+// Read the dashboard once at load time; it never changes at runtime.
+const UI_HTML = fs.readFileSync(UI_PATH);
 
 const TIMEOUT_MESSAGES = new Set(['Process timed out!', 'Waiting timed out']);
 
@@ -343,7 +345,7 @@ const monitor = (queueOrOptions, maybeOptions = null) => {
   const server = http.createServer((req, res) => {
     if (req.url === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(fs.readFileSync(UI_PATH));
+      res.end(UI_HTML);
     } else if (req.method === 'POST' && req.url.startsWith('/api/')) {
       // The custom header cannot be attached by a cross-site request
       // without a CORS preflight (which this server never grants), so
